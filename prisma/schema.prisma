@@ -1,0 +1,114 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  ADMIN
+  CLIENT
+}
+
+enum UserStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum ImportBatchStatus {
+  PROCESSING
+  SUCCESS
+  FAILED
+}
+
+model User {
+  id                String        @id @default(cuid())
+  name              String?
+  email             String        @unique
+  passwordHash      String
+  role              Role          @default(CLIENT)
+  status            UserStatus    @default(ACTIVE)
+  userCompanies UserCompany[]
+  importBatches     ImportBatch[] @relation("ImportBatchCreatedBy")
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+}
+
+model Group {
+  id        String    @id @default(cuid())
+  name      String    @unique
+  isActive  Boolean   @default(true)
+  companies Company[]
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+}
+
+model Company {
+  id            String        @id @default(cuid())
+  groupId       String
+  group         Group         @relation(fields: [groupId], references: [id], onDelete: Restrict)
+  name          String
+  document      String?       @unique
+  isActive      Boolean       @default(true)
+  userCompanies UserCompany[]
+  importBatches ImportBatch[]
+  ledgerEntries LedgerEntry[]
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  @@index([groupId])
+}
+
+model UserCompany {
+  userId    String
+  companyId String
+  user      User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@id([userId, companyId])
+  @@index([companyId])
+}
+
+model ImportBatch {
+  id             String            @id @default(cuid())
+  companyId      String
+  company        Company           @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  referenceMonth String
+  status         ImportBatchStatus @default(PROCESSING)
+  checksum       String
+  fileName       String?
+  totalsJson     Json?
+  totalRows      Int               @default(0)
+  processedRows  Int               @default(0)
+  lastError      String?
+  createdByUserId String?
+  createdByUser  User?             @relation("ImportBatchCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
+  ledgerEntries  LedgerEntry[]
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+
+  @@unique([companyId, referenceMonth, checksum])
+  @@index([companyId, referenceMonth])
+}
+
+model LedgerEntry {
+  id             String      @id @default(cuid())
+  importBatchId  String
+  importBatch    ImportBatch @relation(fields: [importBatchId], references: [id], onDelete: Cascade)
+  companyId      String
+  company        Company     @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  referenceMonth String
+  accountCode    String
+  accountName    String
+  debit          Decimal     @db.Decimal(18, 2)
+  credit         Decimal     @db.Decimal(18, 2)
+  balance        Decimal     @db.Decimal(18, 2)
+  rawJson        Json?
+  createdAt      DateTime    @default(now())
+
+  @@index([companyId, referenceMonth])
+  @@index([importBatchId])
+}

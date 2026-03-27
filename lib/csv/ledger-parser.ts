@@ -130,6 +130,17 @@ export async function parseLedgerCsvBuffer(buffer: Buffer) {
     throw new Error("Arquivo CSV vazio ou sem linhas validas.");
   }
 
+  // Sort entries by account code hierarchy (numerically per segment)
+  entries.sort((a, b) => {
+    const partsA = a.accountCode.split(".").map(Number);
+    const partsB = b.accountCode.split(".").map(Number);
+    for (let i = 0; i < Math.max(partsA.length, partsB.length); i++) {
+      const diff = (partsA[i] ?? 0) - (partsB[i] ?? 0);
+      if (diff !== 0) return diff;
+    }
+    return 0;
+  });
+
   return {
     entries,
     totals: {

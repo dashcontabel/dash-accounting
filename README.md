@@ -65,3 +65,30 @@ npm run prisma:studio
 npm run lint
 npm run build
 ```
+
+## Milestone IMPORT_XLSX_MAPPED_SUMMARY
+
+### 1. Seed de mapeamentos (ADMIN)
+
+Com um ADMIN autenticado, execute:
+
+`POST /api/admin/mappings/seed`
+
+Isso cria regras iniciais de `AccountMapping` (EXACT/PREFIX/LIST), incluindo campos calculados.
+
+### 2. Importar balancete XLSX
+
+- Tela: `/app/imports`
+- Endpoint: `POST /api/imports/xlsx`
+- Form-data:
+  - `file` (`.xlsx`)
+  - `companyId`
+  - `referenceMonth` (`YYYY-MM`)
+
+O processamento:
+- detecta colunas dinamicamente por header (Classificacao/Codigo + valores)
+- normaliza moeda pt-BR
+- aplica regras de mapeamento
+- calcula campos derivados por formula segura
+- persiste em `DashboardMonthlySummary`
+- registra status/log em `ImportBatch` e contas nao mapeadas em `UnmappedAccount`

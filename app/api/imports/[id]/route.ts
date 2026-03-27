@@ -32,6 +32,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
         id: true,
         companyId: true,
         referenceMonth: true,
+        sourceType: true,
         status: true,
         checksum: true,
         fileName: true,
@@ -54,24 +55,34 @@ export async function GET(request: NextRequest, context: RouteContext) {
       return NextResponse.json({ error: "Acesso negado." }, { status: 403 });
     }
 
-    const entriesPreview = await prisma.ledgerEntry.findMany({
-      where: { importBatchId: batch.id },
-      orderBy: { accountCode: "asc" },
-      take: 200,
+    const summary = await prisma.dashboardMonthlySummary.findUnique({
+      where: {
+        companyId_referenceMonth: {
+          companyId: batch.companyId,
+          referenceMonth: batch.referenceMonth,
+        },
+      },
       select: {
         id: true,
+        dataJson: true,
+        updatedAt: true,
+      },
+    });
+
+    const unmappedAccounts = await prisma.unmappedAccount.findMany({
+      where: { importBatchId: batch.id },
+      orderBy: { accountCode: "asc" },
+      take: 300,
+      select: {
         accountCode: true,
-        accountName: true,
-        debit: true,
-        credit: true,
-        balance: true,
-        rawJson: true,
+        description: true,
       },
     });
 
     return NextResponse.json({
       batch,
-      entriesPreview,
+      summary,
+      unmappedAccounts,
     });
   } catch {
     return NextResponse.json(

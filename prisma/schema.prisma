@@ -18,9 +18,32 @@ enum UserStatus {
 }
 
 enum ImportBatchStatus {
+  PENDING
   PROCESSING
-  SUCCESS
+  DONE
   FAILED
+}
+
+enum ImportSourceType {
+  XLSX
+}
+
+enum MappingMatchType {
+  EXACT
+  PREFIX
+  LIST
+}
+
+enum MappingValueColumn {
+  saldo_atual
+  debito
+  credito
+  saldo_anterior
+}
+
+enum MappingAggregation {
+  SUM
+  ABS_SUM
 }
 
 model User {
@@ -55,6 +78,7 @@ model Company {
   userCompanies UserCompany[]
   importBatches ImportBatch[]
   ledgerEntries LedgerEntry[]
+  dashboardMonthlySummaries DashboardMonthlySummary[]
   createdAt     DateTime      @default(now())
   updatedAt     DateTime      @updatedAt
 
@@ -77,7 +101,8 @@ model ImportBatch {
   companyId      String
   company        Company           @relation(fields: [companyId], references: [id], onDelete: Cascade)
   referenceMonth String
-  status         ImportBatchStatus @default(PROCESSING)
+  sourceType     ImportSourceType  @default(XLSX)
+  status         ImportBatchStatus @default(PENDING)
   checksum       String
   fileName       String?
   totalsJson     Json?
@@ -87,6 +112,7 @@ model ImportBatch {
   createdByUserId String?
   createdByUser  User?             @relation("ImportBatchCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
   ledgerEntries  LedgerEntry[]
+  unmappedAccounts UnmappedAccount[]
   createdAt      DateTime          @default(now())
   updatedAt      DateTime          @updatedAt
 
@@ -111,4 +137,44 @@ model LedgerEntry {
 
   @@index([companyId, referenceMonth])
   @@index([importBatchId])
+}
+
+model AccountMapping {
+  id             String              @id @default(cuid())
+  dashboardField String
+  matchType      MappingMatchType
+  codes          Json
+  valueColumn    MappingValueColumn
+  aggregation    MappingAggregation
+  isCalculated   Boolean             @default(false)
+  formula        String?
+  createdAt      DateTime            @default(now())
+  updatedAt      DateTime            @updatedAt
+
+  @@index([dashboardField])
+}
+
+model DashboardMonthlySummary {
+  id             String   @id @default(cuid())
+  companyId      String
+  company        Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  referenceMonth String
+  dataJson       Json
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@unique([companyId, referenceMonth])
+  @@index([companyId, referenceMonth])
+}
+
+model UnmappedAccount {
+  id            String     @id @default(cuid())
+  importBatchId String
+  importBatch   ImportBatch @relation(fields: [importBatchId], references: [id], onDelete: Cascade)
+  accountCode   String
+  description   String?
+  createdAt     DateTime   @default(now())
+
+  @@index([importBatchId])
+  @@index([accountCode])
 }

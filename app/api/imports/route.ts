@@ -62,6 +62,7 @@ export async function GET(request: NextRequest) {
         id: true,
         companyId: true,
         referenceMonth: true,
+        sourceType: true,
         status: true,
         checksum: true,
         fileName: true,
@@ -191,7 +192,7 @@ export async function POST(request: NextRequest) {
       await tx.importBatch.update({
         where: { id: batch.id },
         data: {
-          status: "SUCCESS",
+          status: "DONE",
           totalRows: payload.length,
           processedRows: payload.length,
           totalsJson: {
@@ -208,6 +209,7 @@ export async function POST(request: NextRequest) {
       where: { id: batch.id },
       select: {
         id: true,
+        sourceType: true,
         status: true,
         companyId: true,
         referenceMonth: true,

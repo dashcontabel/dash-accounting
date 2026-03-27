@@ -199,7 +199,7 @@ export default function Home() {
         if (isMounted) {
           const companies = data.allowedCompanies ?? [];
           const initialCompanyId =
-            data.activeCompanyId ?? (companies.length === 1 ? companies[0].id : "");
+            data.activeCompanyId ?? companies[0]?.id ?? "";
 
           setUserEmail(data.user.email);
           setUserRole(data.user.role);

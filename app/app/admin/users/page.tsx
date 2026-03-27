@@ -65,6 +65,7 @@ export default function AdminUsersPage() {
   const canSubmit = useMemo(() => {
     if (!form.email.trim()) return false;
     if (!editingUser && form.password.length < 8) return false;
+    if (editingUser && form.password && form.password.length < 8) return false;
     return true;
   }, [editingUser, form.email, form.password.length]);
 
@@ -364,6 +365,12 @@ export default function AdminUsersPage() {
                   onChange={(event) => setForm((c) => ({ ...c, password: event.target.value }))}
                   className="mt-1 w-full rounded-xl border border-[--border] bg-[--surface-2] px-3 py-2.5 text-foreground placeholder:text-[--text-muted] focus:outline-none focus:ring-2 focus:ring-brand/40"
                 />
+                {form.password && form.password.length < 8 && (
+                  <span className="mt-1 block text-xs text-red-500">Mínimo de 8 caracteres.</span>
+                )}
+                {!form.password && (
+                  <span className="mt-1 block text-xs text-[--text-muted]">Mínimo de 8 caracteres.</span>
+                )}
               </label>
               <label className="text-sm font-medium text-foreground">
                 Perfil

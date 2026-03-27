@@ -91,3 +91,51 @@ export async function GET(request: NextRequest, context: RouteContext) {
     );
   }
 }
+
+export async function DELETE(request: NextRequest, context: RouteContext) {
+  try {
+    const user = await getActiveUserFromSession(request);
+    if (!user) {
+      return NextResponse.json({ error: "Nao autenticado." }, { status: 401 });
+    }
+    if (user.role !== "ADMIN") {
+      return NextResponse.json({ error: "Sem permissao para excluir importacoes." }, { status: 403 });
+    }
+
+    const { id } = await context.params;
+    const batch = await prisma.importBatch.findUnique({
+      where: { id },
+      select: { id: true, companyId: true, referenceMonth: true },
+    });
+
+    if (!batch) {
+      return NextResponse.json({ error: "Import nao encontrado." }, { status: 404 });
+    }
+
+    try {
+      await assertCompanyAccess(user, batch.companyId);
+    } catch {
+      return NextResponse.json({ error: "Acesso negado." }, { status: 403 });
+    }
+
+    // Delete the batch — LedgerEntry and UnmappedAccount cascade automatically
+    await prisma.importBatch.delete({ where: { id } });
+
+    // Remove the monthly summary if no other batch exists for this company+month
+    const remainingBatches = await prisma.importBatch.count({
+      where: { companyId: batch.companyId, referenceMonth: batch.referenceMonth },
+    });
+    if (remainingBatches === 0) {
+      await prisma.dashboardMonthlySummary.deleteMany({
+        where: { companyId: batch.companyId, referenceMonth: batch.referenceMonth },
+      });
+    }
+
+    return new NextResponse(null, { status: 204 });
+  } catch {
+    return NextResponse.json(
+      { error: "Nao foi possivel excluir o import." },
+      { status: 500 },
+    );
+  }
+}

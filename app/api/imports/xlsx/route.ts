@@ -6,7 +6,7 @@ import { z } from "zod";
 import { getUserFromRequest } from "@/lib/auth";
 import { assertCompanyAccess } from "@/lib/company-access";
 import { prisma } from "@/lib/prisma";
-import { applyAccountMappings, parseXlsxBuffer } from "@/lib/xlsx";
+import { applyAccountMappings, detectFileFormat, parseXlsxBuffer } from "@/lib/xlsx";
 
 export const runtime = "nodejs";
 
@@ -35,6 +35,9 @@ export async function POST(request: NextRequest) {
     if (!user) {
       return NextResponse.json({ error: "Nao autenticado." }, { status: 401 });
     }
+    if (user.role === "CLIENT") {
+      return NextResponse.json({ error: "Sem permissao para realizar importacoes." }, { status: 403 });
+    }
 
     const formData = await request.formData();
     const file = formData.get("file");
@@ -61,8 +64,10 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Arquivo excede 10MB." }, { status: 400 });
     }
 
-    if (!file.name.toLowerCase().endsWith(".xlsx")) {
-      return NextResponse.json({ error: "Formato invalido. Envie um .xlsx." }, { status: 400 });
+    const allowedExtensions = [".xlsx", ".xls", ".csv"];
+    const hasAllowedExtension = allowedExtensions.some((ext) => file.name.toLowerCase().endsWith(ext));
+    if (!hasAllowedExtension) {
+      return NextResponse.json({ error: "Formato invalido. Envie um .xlsx, .xls ou .csv." }, { status: 400 });
     }
 
     try {
@@ -75,7 +80,7 @@ export async function POST(request: NextRequest) {
     const checksum = createHash("sha256").update(fileBuffer).digest("hex");
 
     // Parse the file upfront to extract metadata (CNPJ, period) and validate the sheet
-    const parsedWorkbook = parseXlsxBuffer(fileBuffer);
+    const parsedWorkbook = parseXlsxBuffer(fileBuffer, file.name);
 
     // Determine the reference month: form field takes priority, then file metadata
     const effectiveMonth =
@@ -85,6 +90,24 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(
         { error: "referenceMonth nao informado e nao foi possivel detectar no arquivo." },
         { status: 400 },
+      );
+    }
+
+    // Block import when a successful batch already exists for this company+month
+    // (different file — not the idempotency case which is handled by the checksum check below)
+    const existingDoneBatch = await prisma.importBatch.findFirst({
+      where: {
+        companyId: parsedForm.data.companyId,
+        referenceMonth: effectiveMonth,
+        status: "DONE",
+        NOT: { checksum },
+      },
+      select: { id: true },
+    });
+    if (existingDoneBatch) {
+      return NextResponse.json(
+        { error: `O mes ${effectiveMonth} ja possui uma importacao concluida. Para substituir, exclua o import existente antes de reimportar.` },
+        { status: 409 },
       );
     }
 

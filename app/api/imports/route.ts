@@ -92,6 +92,9 @@ export async function POST(request: NextRequest) {
     if (!user) {
       return NextResponse.json({ error: "Nao autenticado." }, { status: 401 });
     }
+    if (user.role === "CLIENT") {
+      return NextResponse.json({ error: "Sem permissao para realizar importacoes." }, { status: 403 });
+    }
 
     const formData = await request.formData();
     const file = formData.get("file");

@@ -64,6 +64,10 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const parsedBody = createUserSchema.safeParse(body);
     if (!parsedBody.success) {
+      const fieldErrors = parsedBody.error.flatten().fieldErrors;
+      if (fieldErrors.password) {
+        return NextResponse.json({ error: "A senha deve ter entre 8 e 128 caracteres." }, { status: 400 });
+      }
       return NextResponse.json({ error: "Dados invalidos." }, { status: 400 });
     }
 

@@ -44,15 +44,17 @@ export default function ImportsPage() {
   const [referenceMonth, setReferenceMonth] = useState("");
   const [file, setFile] = useState<File | null>(null);
   const [batches, setBatches] = useState<ImportBatch[]>([]);
-  const [selectedBatchId, setSelectedBatchId] = useState<string | null>(null);
-  const [summary, setSummary] = useState<SummaryPayload | null>(null);
+  const [expandedBatchId, setExpandedBatchId] = useState<string | null>(null);
+  const [batchSummaries, setBatchSummaries] = useState<Record<string, SummaryPayload | null>>({});
+  const [loadingDetailId, setLoadingDetailId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isUploading, setIsUploading] = useState(false);
+  const [deletingBatchId, setDeletingBatchId] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
 
   const canUpload = useMemo(
-    () => Boolean(file && selectedCompanyId && referenceMonth),
-    [file, selectedCompanyId, referenceMonth],
+    () => Boolean(file && selectedCompanyId && referenceMonth && me?.role === "ADMIN"),
+    [file, selectedCompanyId, referenceMonth, me?.role],
   );
 
   async function loadBatches(companyId: string) {
@@ -79,11 +81,12 @@ export default function ImportsPage() {
       batch?: { totalsJson?: { summary?: SummaryPayload } | null };
     };
 
-    setSummary(
+    const resolved =
       data.summary?.dataJson ??
-        (data.batch?.totalsJson as { summary?: SummaryPayload } | undefined)?.summary ??
-        null,
-    );
+      (data.batch?.totalsJson as { summary?: SummaryPayload } | undefined)?.summary ??
+      null;
+
+    setBatchSummaries((prev) => ({ ...prev, [batchId]: resolved }));
   }
 
   useEffect(() => {
@@ -162,8 +165,11 @@ export default function ImportsPage() {
       }
 
       setMessage(data.idempotent ? "Arquivo ja importado para este periodo." : "Importacao concluida.");
-      setSelectedBatchId(data.batchId ?? null);
-      setSummary(data.summary ?? null);
+      const newBatchId = data.batchId ?? null;
+      if (newBatchId) {
+        setBatchSummaries((prev) => ({ ...prev, [newBatchId]: data.summary ?? null }));
+        setExpandedBatchId(newBatchId);
+      }
       setFile(null);
       await loadBatches(selectedCompanyId);
     } catch {
@@ -175,8 +181,7 @@ export default function ImportsPage() {
 
   async function handleCompanyChange(companyId: string) {
     setSelectedCompanyId(companyId);
-    setSelectedBatchId(null);
-    setSummary(null);
+    setExpandedBatchId(null);
     setMessage(null);
 
     if (companyId) {
@@ -190,9 +195,39 @@ export default function ImportsPage() {
     }
   }
 
-  async function handleSelectBatch(batchId: string) {
-    setSelectedBatchId(batchId);
-    await loadBatchDetails(batchId);
+  async function handleToggleBatch(batchId: string) {
+    if (expandedBatchId === batchId) {
+      setExpandedBatchId(null);
+      return;
+    }
+    setExpandedBatchId(batchId);
+    if (!(batchId in batchSummaries)) {
+      setLoadingDetailId(batchId);
+      await loadBatchDetails(batchId);
+      setLoadingDetailId(null);
+    }
+  }
+
+  async function handleDeleteBatch(batchId: string, label: string) {
+    if (!confirm(`Excluir o import "${label}"?\nOs dados do dashboard deste mês também serão removidos.`)) return;
+
+    setDeletingBatchId(batchId);
+    setMessage(null);
+    try {
+      const response = await fetch(`/api/imports/${batchId}`, { method: "DELETE" });
+      if (!response.ok) {
+        const data = (await response.json()) as { error?: string };
+        setMessage(data.error ?? "Falha ao excluir import.");
+        return;
+      }
+      if (expandedBatchId === batchId) setExpandedBatchId(null);
+      setBatchSummaries((prev) => { const next = { ...prev }; delete next[batchId]; return next; });
+      await loadBatches(selectedCompanyId);
+    } catch {
+      setMessage("Falha ao excluir import.");
+    } finally {
+      setDeletingBatchId(null);
+    }
   }
 
   async function handleLogout() {
@@ -212,6 +247,13 @@ export default function ImportsPage() {
         </div>
       </div>
 
+      {me?.role !== "ADMIN" && (
+        <div className="mt-6 rounded-xl border border-[--border] bg-[--surface] p-5 text-sm text-[--text-muted]">
+          Apenas administradores podem realizar importações.
+        </div>
+      )}
+
+      {me?.role === "ADMIN" && (
       <form
         onSubmit={(event) => void handleUpload(event)}
         className="mt-6 rounded-xl border border-[--border] bg-[--surface] p-5 shadow-sm"
@@ -223,7 +265,7 @@ export default function ImportsPage() {
               value={selectedCompanyId}
               onChange={(event) => void handleCompanyChange(event.target.value)}
               disabled={me?.role !== "ADMIN"}
-              className="mt-1 w-full rounded-xl border border-[--border] bg-[--surface-2] px-3 py-2.5 text-foreground focus:outline-none focus:ring-2 focus:ring-brand/40 disabled:opacity-60"
+              className="mt-1 w-full rounded-xl border border-[--border] bg-[--surface-2] px-3 py-2.5 text-foreground focus:outline-none focus:ring-2 focus:ring-brand/40 disabled:opacity-60 dark:scheme-dark dark:bg-[#1a2540] dark:text-zinc-100 [&_option]:dark:bg-[#1a2540] [&_option]:dark:text-zinc-100"
             >
               <option value="" disabled>
                 Selecione
@@ -242,16 +284,16 @@ export default function ImportsPage() {
               type="month"
               value={referenceMonth}
               onChange={(event) => setReferenceMonth(event.target.value)}
-              className="mt-1 w-full rounded-xl border border-[--border] bg-[--surface-2] px-3 py-2.5 text-foreground focus:outline-none focus:ring-2 focus:ring-brand/40"
+              className="mt-1 w-full rounded-xl border border-[--border] bg-[--surface-2] px-3 py-2.5 text-foreground focus:outline-none focus:ring-2 focus:ring-brand/40 dark:scheme-dark dark:bg-[#1a2540] dark:text-zinc-100"
               required
             />
           </label>
 
           <label className="text-sm font-medium text-foreground">
-            Arquivo XLSX
+            Arquivo (XLSX / XLS / CSV)
             <input
               type="file"
-              accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+              accept=".xlsx,.xls,.csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,text/csv"
               onChange={(event) => setFile(event.target.files?.[0] ?? null)}
               className="mt-1 w-full rounded-xl border border-[--border] bg-[--surface-2] px-3 py-2.5 text-foreground file:mr-3 file:rounded-lg file:border-0 file:bg-brand/10 file:px-3 file:py-1 file:text-sm file:font-medium file:text-brand"
               required
@@ -265,11 +307,12 @@ export default function ImportsPage() {
             disabled={!canUpload || isUploading}
             className="rounded-xl bg-brand px-4 py-2 text-sm font-medium text-white hover:opacity-90 disabled:opacity-40"
           >
-            {isUploading ? "Processando..." : "Importar XLSX"}
+            {isUploading ? "Processando..." : "Importar"}
           </button>
           <p className="text-xs text-[--text-muted]">Limite: 10 MB por arquivo</p>
         </div>
       </form>
+      )}
 
       {message ? (
         <p className="mt-4 rounded-lg border border-[--border] bg-[--surface-2] px-3 py-2 text-sm text-foreground">
@@ -277,24 +320,7 @@ export default function ImportsPage() {
         </p>
       ) : null}
 
-      {summary ? (
-        <section className="mt-6 rounded-xl border border-[--border] bg-[--surface] p-5 shadow-sm">
-          <h2 className="text-base font-semibold text-foreground">Resumo consolidado</h2>
-          <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-            {Object.entries(summary).map(([field, value]) => (
-              <article key={field} className="rounded-lg border border-[--border] bg-[--surface-2] px-3 py-2">
-                <p className="text-xs uppercase tracking-wide text-[--text-muted]">{field}</p>
-                <p className="mt-1 text-sm font-semibold text-foreground">
-                  {Number(value).toLocaleString("pt-BR", {
-                    minimumFractionDigits: 2,
-                    maximumFractionDigits: 2,
-                  })}
-                </p>
-              </article>
-            ))}
-          </div>
-        </section>
-      ) : null}
+
 
       {isLoading ? <p className="mt-6 text-sm text-[--text-muted]">Carregando...</p> : null}
 
@@ -308,7 +334,7 @@ export default function ImportsPage() {
             <article
               key={batch.id}
               className={`rounded-xl border bg-[--surface] p-4 shadow-sm transition-colors ${
-                selectedBatchId === batch.id
+                expandedBatchId === batch.id
                   ? "border-brand ring-1 ring-brand/30"
                   : "border-[--border]"
               }`}
@@ -320,17 +346,37 @@ export default function ImportsPage() {
                   </p>
                   <p className="text-xs text-[--text-muted]">{new Date(batch.createdAt).toLocaleString("pt-BR")}</p>
                 </div>
-                <span
-                  className={`inline-flex rounded-full px-2 py-1 text-xs font-medium ${
-                    batch.status === "DONE"
-                      ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-400"
-                      : batch.status === "FAILED"
-                        ? "bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-400"
-                        : "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-400"
-                  }`}
-                >
-                  {batch.status}
-                </span>
+                <div className="flex items-center gap-2">
+                  <span
+                    className={`inline-flex rounded-full px-2 py-1 text-xs font-medium ${
+                      batch.status === "DONE"
+                        ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-400"
+                        : batch.status === "FAILED"
+                          ? "bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-400"
+                          : "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-400"
+                    }`}
+                  >
+                    {batch.status}
+                  </span>
+                  {me?.role === "ADMIN" && (
+                    <button
+                      type="button"
+                      disabled={deletingBatchId === batch.id}
+                      onClick={() => void handleDeleteBatch(batch.id, `${batch.fileName ?? "import"} (${batch.referenceMonth})`)}
+                      className="inline-flex items-center gap-1 rounded-lg border border-red-200 bg-red-50 px-2 py-1 text-xs font-medium text-red-700 hover:bg-red-100 disabled:opacity-40 dark:border-red-800/40 dark:bg-red-950/20 dark:text-red-400 dark:hover:bg-red-900/30 transition-colors"
+                      title="Excluir import"
+                    >
+                      {deletingBatchId === batch.id ? (
+                        "..."
+                      ) : (
+                        <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                        </svg>
+                      )}
+                      Excluir
+                    </button>
+                  )}
+                </div>
               </div>
               <p className="mt-2 text-sm text-[--text-muted]">
                 Linhas processadas: {batch.processedRows} / {batch.totalRows}
@@ -340,11 +386,57 @@ export default function ImportsPage() {
               ) : null}
               <button
                 type="button"
-                onClick={() => void handleSelectBatch(batch.id)}
-                className="mt-3 rounded-lg border border-[--border] bg-[--surface-2] px-3 py-1.5 text-xs font-medium text-foreground hover:bg-[--border] transition-colors"
+                onClick={() => void handleToggleBatch(batch.id)}
+                className="mt-3 inline-flex items-center gap-1.5 rounded-lg border border-[--border] bg-[--surface-2] px-3 py-1.5 text-xs font-medium text-foreground hover:bg-[--border] transition-colors"
               >
-                Ver detalhes
+                {expandedBatchId === batch.id ? (
+                  <>
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3" viewBox="0 0 20 20" fill="currentColor">
+                      <path fillRule="evenodd" d="M14.707 12.707a1 1 0 01-1.414 0L10 9.414l-3.293 3.293a1 1 0 01-1.414-1.414l4-4a1 1 0 011.414 0l4 4a1 1 0 010 1.414z" clipRule="evenodd" />
+                    </svg>
+                    Recolher
+                  </>
+                ) : (
+                  <>
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3" viewBox="0 0 20 20" fill="currentColor">
+                      <path fillRule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clipRule="evenodd" />
+                    </svg>
+                    Ver detalhes
+                  </>
+                )}
               </button>
+
+              {expandedBatchId === batch.id && (
+                <div className="mt-4 border-t border-[--border] pt-4">
+                  {loadingDetailId === batch.id ? (
+                    <p className="text-xs text-[--text-muted]">Carregando detalhes...</p>
+                  ) : batchSummaries[batch.id] ? (
+                    <>
+                      <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-[--text-muted]">
+                        Resumo consolidado
+                      </p>
+                      <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                        {Object.entries(batchSummaries[batch.id]!).map(([field, value]) => (
+                          <div
+                            key={field}
+                            className="rounded-lg border border-[--border] bg-[--surface-2] px-3 py-2"
+                          >
+                            <p className="text-xs uppercase tracking-wide text-[--text-muted]">{field}</p>
+                            <p className="mt-1 text-sm font-semibold text-foreground">
+                              {Number(value).toLocaleString("pt-BR", {
+                                minimumFractionDigits: 2,
+                                maximumFractionDigits: 2,
+                              })}
+                            </p>
+                          </div>
+                        ))}
+                      </div>
+                    </>
+                  ) : (
+                    <p className="text-xs text-[--text-muted]">Nenhum resumo disponível para este import.</p>
+                  )}
+                </div>
+              )}
             </article>
           ))}
         </section>

@@ -14,8 +14,24 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Dash Contabil",
-  description: "Plataforma de gestao contabil corporativa",
+  metadataBase: new URL(
+    process.env.NEXT_PUBLIC_SITE_URL ??
+    (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "http://localhost:3000")
+  ),
+  title: "Dash Contábil",
+  description: "Plataforma de gestão contábil corporativa",
+  openGraph: {
+    title: "Dash Contábil",
+    description: "Plataforma de gestão contábil corporativa",
+    siteName: "Dash Contábil",
+    locale: "pt_BR",
+    type: "website",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "Dash Contábil",
+    description: "Plataforma de gestão contábil corporativa",
+  },
 };
 
 export default function RootLayout({

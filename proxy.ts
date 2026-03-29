@@ -23,7 +23,7 @@ async function getSession(request: NextRequest): Promise<SessionPayload | null> 
   }
 }
 
-export async function proxy(request: NextRequest) {
+export default async function proxy(request: NextRequest) {
   const { pathname, search } = request.nextUrl;
   const session = await getSession(request);
   const isAuthenticated = Boolean(session?.sub);

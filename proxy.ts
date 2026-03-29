@@ -49,5 +49,14 @@ export default async function proxy(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/", "/app/:path*", "/login"],
+  matcher: [
+    /*
+     * Match all request paths except:
+     * - _next/static (static files)
+     * - _next/image (image optimization)
+     * - favicon.ico, sitemap.xml, robots.txt (metadata files)
+     * - public folder assets
+     */
+    "/((?!_next/static|_next/image|favicon\\.ico|sitemap\\.xml|robots\\.txt|public/).*)",
+  ],
 };

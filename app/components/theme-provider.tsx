@@ -29,7 +29,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     const initial: Theme =
       saved ?? (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
     document.documentElement.classList.toggle("dark", initial === "dark");
-    // eslint-disable-next-line react-hooks/no-direct-set-state-in-use-effect
+    // eslint-disable-next-line react-hooks/no-direct-set-state-in-use-effect 
     setTheme(initial);
   }, []);
 

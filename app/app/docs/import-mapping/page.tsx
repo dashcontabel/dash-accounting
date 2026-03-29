@@ -12,10 +12,11 @@ type MeResponse = {
 
 type Section = "negocio" | "funcional" | "formato" | "tecnico";
 
-const SECTIONS: { id: Section; label: string; icon: React.ReactNode }[] = [
+const SECTIONS: { id: Section; label: string; shortLabel: string; icon: React.ReactNode }[] = [
   {
     id: "negocio",
     label: "Visão de Negócio",
+    shortLabel: "Negócio",
     icon: (
       <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
         <path strokeLinecap="round" strokeLinejoin="round" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
@@ -25,6 +26,7 @@ const SECTIONS: { id: Section; label: string; icon: React.ReactNode }[] = [
   {
     id: "funcional",
     label: "Visão Funcional",
+    shortLabel: "Funcional",
     icon: (
       <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
         <path strokeLinecap="round" strokeLinejoin="round" d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" />
@@ -34,6 +36,7 @@ const SECTIONS: { id: Section; label: string; icon: React.ReactNode }[] = [
   {
     id: "formato",
     label: "Formato do Arquivo",
+    shortLabel: "Formato",
     icon: (
       <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
         <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
@@ -43,6 +46,7 @@ const SECTIONS: { id: Section; label: string; icon: React.ReactNode }[] = [
   {
     id: "tecnico",
     label: "Visão Técnica",
+    shortLabel: "Técnica",
     icon: (
       <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
         <path strokeLinecap="round" strokeLinejoin="round" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" />
@@ -76,7 +80,7 @@ function Step({ number, title, children }: { number: number; title: string; chil
         </div>
         <div className="mt-1 w-px flex-1 bg-[--border]" />
       </div>
-      <div className="pb-6">
+      <div className="min-w-0 flex-1 pb-6">
         <p className="text-sm font-semibold text-foreground">{title}</p>
         <div className="mt-1 text-sm text-[--text-muted]">{children}</div>
       </div>
@@ -105,9 +109,11 @@ function InfoBox({ title, children, color = "blue" }: { title: string; children:
 
 function CodeBlock({ children }: { children: string }) {
   return (
-    <pre className="overflow-x-auto rounded-xl border border-[--border] bg-zinc-900 p-4 text-xs leading-relaxed text-zinc-100 dark:bg-zinc-950">
-      <code>{children}</code>
-    </pre>
+    <div className="overflow-x-auto rounded-xl border border-[--border] bg-zinc-900 dark:bg-zinc-950">
+      <pre className="p-4 text-xs leading-relaxed text-zinc-100 whitespace-pre min-w-max">
+        <code>{children}</code>
+      </pre>
+    </div>
   );
 }
 
@@ -178,23 +184,25 @@ export default function ImportMappingDocsPage() {
           </div>
         </div>
 
-        {/* Tab nav */}
-        <div className="flex gap-1 rounded-xl border border-[--border] bg-[--surface-2] p-1">
-          {SECTIONS.map((s) => (
-            <button
-              key={s.id}
-              type="button"
-              onClick={() => setActive(s.id)}
-              className={`flex flex-1 items-center justify-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
-                active === s.id
-                  ? "bg-brand text-white shadow-sm"
-                  : "text-[--text-muted] hover:text-foreground"
-              }`}
-            >
-              {s.icon}
-              <span className="hidden sm:inline">{s.label}</span>
-            </button>
-          ))}
+        {/* Tab nav — sticky */}
+        <div className="sticky top-0 z-20 -mx-3 px-3 py-2 sm:-mx-5 sm:px-5 lg:-mx-6 lg:px-6 bg-[--background]">
+          <div className="flex gap-1 rounded-xl border border-[--border] bg-[--surface-2] p-1 shadow-sm">
+            {SECTIONS.map((s) => (
+              <button
+                key={s.id}
+                type="button"
+                onClick={() => setActive(s.id)}
+                className={`flex flex-1 flex-col items-center justify-center gap-0.5 rounded-lg px-2 py-2 text-sm font-medium transition-colors ${
+                  active === s.id
+                    ? "bg-brand text-white shadow-sm"
+                    : "text-[--text-muted] hover:text-foreground"
+                }`}
+              >
+                {s.icon}
+                <span className="text-[10px] leading-none">{s.shortLabel}</span>
+              </button>
+            ))}
+          </div>
         </div>
 
         {/* ── Visão de Negócio ── */}
@@ -301,38 +309,56 @@ export default function ImportMappingDocsPage() {
 
             <div>
               <SubTitle>Tipos de mapeamento disponíveis</SubTitle>
-              <div className="mt-3 overflow-hidden rounded-xl border border-[--border]">
-                <table className="min-w-full text-sm">
-                  <thead className="border-b border-[--border] bg-[--surface-2] text-xs font-medium uppercase tracking-wide text-[--text-muted]">
-                    <tr>
-                      <th className="px-4 py-3">Tipo</th>
-                      <th className="px-4 py-3">Comportamento</th>
-                      <th className="px-4 py-3">Exemplo</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-[--border]">
-                    <tr className="bg-[--surface]">
-                      <td className="px-4 py-3"><Badge color="blue">PREFIX</Badge></td>
-                      <td className="px-4 py-3 text-[--text-muted]">Captura todas as contas cujo código começa com o prefixo</td>
-                      <td className="px-4 py-3 font-mono text-xs text-[--text-muted]"><code>4.1</code> → captura 4.1.1, 4.1.2.01…</td>
-                    </tr>
-                    <tr className="bg-[--surface-2]">
-                      <td className="px-4 py-3"><Badge color="purple">EXACT</Badge></td>
-                      <td className="px-4 py-3 text-[--text-muted]">Captura apenas a conta com o código exato</td>
-                      <td className="px-4 py-3 font-mono text-xs text-[--text-muted]"><code>4.1.1.001</code> → só essa conta</td>
-                    </tr>
-                    <tr className="bg-[--surface]">
-                      <td className="px-4 py-3"><Badge color="amber">LIST</Badge></td>
-                      <td className="px-4 py-3 text-[--text-muted]">Captura uma lista específica de códigos exatos</td>
-                      <td className="px-4 py-3 font-mono text-xs text-[--text-muted]"><code>4.1.1, 4.2.3</code> → só essas duas</td>
-                    </tr>
-                    <tr className="bg-[--surface-2]">
-                      <td className="px-4 py-3"><Badge color="emerald">Calculado</Badge></td>
-                      <td className="px-4 py-3 text-[--text-muted]">Valor derivado de outros campos via fórmula aritmética</td>
-                      <td className="px-4 py-3 font-mono text-xs text-[--text-muted]"><code>{"{FATURAMENTO} - {DEDUCOES}"}</code></td>
-                    </tr>
-                  </tbody>
-                </table>
+
+              {/* Mobile: cards */}
+              <div className="mt-3 sm:hidden space-y-2">
+                {[
+                  { color: "blue"    as const, label: "PREFIX",    desc: "Captura todas as contas cujo código começa com o prefixo",     ex: "4.1 → captura 4.1.1, 4.1.2.01…" },
+                  { color: "purple"  as const, label: "EXACT",     desc: "Captura apenas a conta com o código exato",                     ex: "4.1.1.001 → só essa conta" },
+                  { color: "amber"   as const, label: "LIST",      desc: "Captura uma lista específica de códigos exatos",               ex: "4.1.1, 4.2.3 → só essas duas" },
+                  { color: "emerald" as const, label: "Calculado", desc: "Valor derivado de outros campos via fórmula aritmética",       ex: "{FATURAMENTO} - {DEDUCOES}" },
+                ].map((m) => (
+                  <div key={m.label} className="rounded-xl border border-[--border] bg-[--surface-2] p-4 space-y-2">
+                    <Badge color={m.color}>{m.label}</Badge>
+                    <p className="text-sm text-[--text-muted]">{m.desc}</p>
+                    <code className="block rounded-lg bg-[--surface] px-3 py-1.5 font-mono text-xs text-[--text-muted]">{m.ex}</code>
+                  </div>
+                ))}
+              </div>
+
+              {/* Desktop: table */}
+              <div className="mt-3 hidden sm:block overflow-x-auto rounded-xl border border-[--border]">
+                  <table className="min-w-full text-sm">
+                    <thead className="border-b border-[--border] bg-[--surface-2] text-xs font-medium uppercase tracking-wide text-[--text-muted]">
+                      <tr>
+                        <th className="px-4 py-3 text-left">Tipo</th>
+                        <th className="px-4 py-3 text-left">Comportamento</th>
+                        <th className="px-4 py-3 text-left">Exemplo</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-[--border]">
+                      <tr className="bg-[--surface]">
+                        <td className="px-4 py-3"><Badge color="blue">PREFIX</Badge></td>
+                        <td className="px-4 py-3 text-[--text-muted]">Captura todas as contas cujo código começa com o prefixo</td>
+                        <td className="px-4 py-3 font-mono text-xs text-[--text-muted]"><code>4.1</code> → captura 4.1.1, 4.1.2.01…</td>
+                      </tr>
+                      <tr className="bg-[--surface-2]">
+                        <td className="px-4 py-3"><Badge color="purple">EXACT</Badge></td>
+                        <td className="px-4 py-3 text-[--text-muted]">Captura apenas a conta com o código exato</td>
+                        <td className="px-4 py-3 font-mono text-xs text-[--text-muted]"><code>4.1.1.001</code> → só essa conta</td>
+                      </tr>
+                      <tr className="bg-[--surface]">
+                        <td className="px-4 py-3"><Badge color="amber">LIST</Badge></td>
+                        <td className="px-4 py-3 text-[--text-muted]">Captura uma lista específica de códigos exatos</td>
+                        <td className="px-4 py-3 font-mono text-xs text-[--text-muted]"><code>4.1.1, 4.2.3</code> → só essas duas</td>
+                      </tr>
+                      <tr className="bg-[--surface-2]">
+                        <td className="px-4 py-3"><Badge color="emerald">Calculado</Badge></td>
+                        <td className="px-4 py-3 text-[--text-muted]">Valor derivado de outros campos via fórmula aritmética</td>
+                        <td className="px-4 py-3 font-mono text-xs text-[--text-muted]"><code>{"{FATURAMENTO} - {DEDUCOES}"}</code></td>
+                      </tr>
+                    </tbody>
+                  </table>
               </div>
             </div>
 
@@ -423,7 +449,7 @@ export default function ImportMappingDocsPage() {
             </div>
 
             {/* Estrutura da planilha */}
-            <div className="rounded-xl border border-[--border] bg-[--surface] p-6 space-y-4">
+            <div className="rounded-xl border border-[--border] bg-[--surface] p-3 sm:p-6 space-y-4">
               <h3 className="text-sm font-semibold text-foreground">Estrutura esperada da planilha</h3>
               <p className="text-sm text-[--text-muted]">
                 O sistema <strong className="text-foreground">detecta automaticamente</strong> o cabeçalho — ele pode estar em qualquer linha dentro das primeiras <strong className="text-foreground">40 linhas</strong>. As linhas antes do cabeçalho são interpretadas como metadados (onde CNPJ e período são extraídos).
@@ -431,55 +457,55 @@ export default function ImportMappingDocsPage() {
 
               {/* Exemplo visual de layout */}
               <div className="overflow-x-auto rounded-xl border border-[--border]">
-                <table className="min-w-full text-xs">
+                <table className="min-w-160 text-xs">
                   <thead>
                     <tr className="border-b border-[--border] bg-zinc-800 text-zinc-300">
-                      <th className="px-3 py-2 text-left font-mono">A</th>
-                      <th className="px-3 py-2 text-left font-mono">B</th>
-                      <th className="px-3 py-2 text-left font-mono">C</th>
-                      <th className="px-3 py-2 text-left font-mono">D</th>
-                      <th className="px-3 py-2 text-left font-mono">E</th>
-                      <th className="px-3 py-2 text-left font-mono">F</th>
+                      <th className="px-3 py-2 text-left font-mono whitespace-nowrap">A</th>
+                      <th className="px-3 py-2 text-left font-mono whitespace-nowrap">B</th>
+                      <th className="px-3 py-2 text-left font-mono whitespace-nowrap">C</th>
+                      <th className="px-3 py-2 text-left font-mono whitespace-nowrap">D</th>
+                      <th className="px-3 py-2 text-left font-mono whitespace-nowrap">E</th>
+                      <th className="px-3 py-2 text-left font-mono whitespace-nowrap">F</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-[--border] text-xs">
                     <tr className="bg-amber-50 dark:bg-amber-950/20">
-                      <td className="px-3 py-2 text-amber-700 dark:text-amber-300" colSpan={6}>Empresa XYZ Ltda — CNPJ: 12.345.678/0001-99 — Período: 01/01/2026 - 31/01/2026</td>
+                      <td className="px-3 py-2 text-amber-700 dark:text-amber-300 whitespace-nowrap" colSpan={6}>Empresa XYZ Ltda — CNPJ: 12.345.678/0001-99 — Período: 01/01/2026 - 31/01/2026</td>
                     </tr>
                     <tr className="bg-[--surface-2]">
                       <td className="px-3 py-2 text-[--text-muted]" colSpan={6}><em>(linhas de metadados adicionais, se houver)</em></td>
                     </tr>
                     <tr className="bg-blue-50 dark:bg-blue-950/20 font-semibold text-blue-700 dark:text-blue-300">
-                      <td className="px-3 py-2">Classificação</td>
-                      <td className="px-3 py-2">Descrição</td>
-                      <td className="px-3 py-2">Saldo Anterior</td>
-                      <td className="px-3 py-2">Débito</td>
-                      <td className="px-3 py-2">Crédito</td>
-                      <td className="px-3 py-2">Saldo Atual</td>
+                      <td className="px-3 py-2 whitespace-nowrap">Classificação</td>
+                      <td className="px-3 py-2 whitespace-nowrap">Descrição</td>
+                      <td className="px-3 py-2 whitespace-nowrap">Saldo Anterior</td>
+                      <td className="px-3 py-2 whitespace-nowrap">Débito</td>
+                      <td className="px-3 py-2 whitespace-nowrap">Crédito</td>
+                      <td className="px-3 py-2 whitespace-nowrap">Saldo Atual</td>
                     </tr>
                     <tr className="bg-[--surface]">
-                      <td className="px-3 py-2 font-mono">4.1.1</td>
+                      <td className="px-3 py-2 font-mono whitespace-nowrap">4.1.1</td>
                       <td className="px-3 py-2">Receita de Serviços</td>
-                      <td className="px-3 py-2 text-right">0,00</td>
-                      <td className="px-3 py-2 text-right">0,00</td>
-                      <td className="px-3 py-2 text-right">150.000,00</td>
-                      <td className="px-3 py-2 text-right">150.000,00</td>
+                      <td className="px-3 py-2 text-right whitespace-nowrap">0,00</td>
+                      <td className="px-3 py-2 text-right whitespace-nowrap">0,00</td>
+                      <td className="px-3 py-2 text-right whitespace-nowrap">150.000,00</td>
+                      <td className="px-3 py-2 text-right whitespace-nowrap">150.000,00</td>
                     </tr>
                     <tr className="bg-[--surface-2]">
-                      <td className="px-3 py-2 font-mono">4.1.1.01</td>
+                      <td className="px-3 py-2 font-mono whitespace-nowrap">4.1.1.01</td>
                       <td className="px-3 py-2">Serviços de Consultoria</td>
-                      <td className="px-3 py-2 text-right">0,00</td>
-                      <td className="px-3 py-2 text-right">0,00</td>
-                      <td className="px-3 py-2 text-right">80.000,00</td>
-                      <td className="px-3 py-2 text-right">80.000,00</td>
+                      <td className="px-3 py-2 text-right whitespace-nowrap">0,00</td>
+                      <td className="px-3 py-2 text-right whitespace-nowrap">0,00</td>
+                      <td className="px-3 py-2 text-right whitespace-nowrap">80.000,00</td>
+                      <td className="px-3 py-2 text-right whitespace-nowrap">80.000,00</td>
                     </tr>
                     <tr className="bg-[--surface]">
-                      <td className="px-3 py-2 font-mono">5.1.1</td>
+                      <td className="px-3 py-2 font-mono whitespace-nowrap">5.1.1</td>
                       <td className="px-3 py-2">Despesas com Pessoal</td>
-                      <td className="px-3 py-2 text-right">0,00</td>
-                      <td className="px-3 py-2 text-right">45.000,00</td>
-                      <td className="px-3 py-2 text-right">0,00</td>
-                      <td className="px-3 py-2 text-right">(45.000,00)</td>
+                      <td className="px-3 py-2 text-right whitespace-nowrap">0,00</td>
+                      <td className="px-3 py-2 text-right whitespace-nowrap">45.000,00</td>
+                      <td className="px-3 py-2 text-right whitespace-nowrap">0,00</td>
+                      <td className="px-3 py-2 text-right whitespace-nowrap">(45.000,00)</td>
                     </tr>
                   </tbody>
                 </table>
@@ -495,13 +521,35 @@ export default function ImportMappingDocsPage() {
             <div className="rounded-xl border border-[--border] bg-[--surface] p-6">
               <h3 className="text-sm font-semibold text-foreground">Colunas reconhecidas</h3>
               <p className="mt-2 text-sm text-[--text-muted]">O sistema identifica colunas pelos nomes — não pela posição. Os nomes aceitos (case/acento insensitive):</p>
-              <div className="mt-4 overflow-hidden rounded-xl border border-[--border]">
+
+              {/* Mobile: cards */}
+              <div className="mt-3 sm:hidden space-y-2">
+                {[
+                  { col: "Código da conta", req: true,  names: "Classificação, Classificacao, Código Conta, Codigo Conta, Código, Codigo" },
+                  { col: "Descrição",        req: false, names: "Descrição, Descricao, Conta, Nome, Descricao Conta" },
+                  { col: "Saldo Anterior",   req: false, names: "Saldo Anterior, Saldo Original, Saldo Inicial" },
+                  { col: "Débito",           req: false, names: "Débito, Debito, Débitos, Debitos" },
+                  { col: "Crédito",          req: false, names: "Crédito, Credito, Créditos, Creditos" },
+                  { col: "Saldo Atual",      req: false, names: "Saldo Atual, Saldo Final" },
+                ].map((r) => (
+                  <div key={r.col} className="rounded-xl border border-[--border] bg-[--surface-2] p-3 space-y-1.5">
+                    <div className="flex items-center justify-between gap-2 flex-wrap">
+                      <span className="text-sm font-medium text-foreground">{r.col}</span>
+                      {r.req ? <Badge color="red">Obrigatória</Badge> : <Badge color="zinc">Opcional</Badge>}
+                    </div>
+                    <p className="font-mono text-xs text-[--text-muted] wrap-break-word">{r.names}</p>
+                  </div>
+                ))}
+              </div>
+
+              {/* Desktop: table */}
+              <div className="mt-4 hidden sm:block overflow-x-auto rounded-xl border border-[--border]">
                 <table className="min-w-full text-sm">
                   <thead className="border-b border-[--border] bg-[--surface-2] text-xs font-medium uppercase tracking-wide text-[--text-muted]">
                     <tr>
-                      <th className="px-4 py-3">Coluna</th>
-                      <th className="px-4 py-3">Obrigatória?</th>
-                      <th className="px-4 py-3">Nomes aceitos no cabeçalho</th>
+                      <th className="px-4 py-3 text-left whitespace-nowrap">Coluna</th>
+                      <th className="px-4 py-3 text-left whitespace-nowrap">Obrigatória?</th>
+                      <th className="px-4 py-3 text-left">Nomes aceitos no cabeçalho</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-[--border] text-sm">
@@ -667,13 +715,38 @@ export default function ImportMappingDocsPage() {
 
             <div>
               <SubTitle>Rotas da API envolvidas</SubTitle>
-              <div className="mt-3 overflow-hidden rounded-xl border border-[--border]">
+
+              {/* Mobile: cards */}
+              <div className="mt-3 sm:hidden space-y-2">
+                {[
+                  { method: "POST",   route: "/api/imports/xlsx",         desc: "Recebe o arquivo, valida, persiste e aplica mapeamentos",              auth: "ADMIN" },
+                  { method: "GET",    route: "/api/imports",               desc: "Lista os ImportBatch de uma empresa (paginado por companyId)",       auth: "ALL"   },
+                  { method: "GET",    route: "/api/imports/[id]",          desc: "Detalhe de um batch: contas não mapeadas + resumo calculado",         auth: "ALL"   },
+                  { method: "GET",    route: "/api/admin/mappings",        desc: "Lista todas as regras de mapeamento",                                auth: "ADMIN" },
+                  { method: "POST",   route: "/api/admin/mappings",        desc: "Cria nova regra de mapeamento",                                      auth: "ADMIN" },
+                  { method: "PATCH",  route: "/api/admin/mappings/[id]",   desc: "Atualiza códigos, tipo ou fórmula de uma regra",                     auth: "ADMIN" },
+                  { method: "DELETE", route: "/api/admin/mappings/[id]",   desc: "Remove uma regra (afeta imports futuros)",                          auth: "ADMIN" },
+                  { method: "POST",   route: "/api/admin/mappings/seed",   desc: "Popula o banco com as regras padrão do balancete de referência",     auth: "ADMIN" },
+                ].map((r) => (
+                  <div key={`m-${r.method}-${r.route}`} className="rounded-xl border border-[--border] bg-[--surface] p-3 space-y-1">
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <span className={`font-mono text-xs font-bold ${r.method === "GET" ? "text-emerald-600 dark:text-emerald-400" : r.method === "POST" ? "text-blue-600 dark:text-blue-400" : r.method === "PATCH" ? "text-amber-600 dark:text-amber-400" : "text-red-600 dark:text-red-400"}`}>{r.method}</span>
+                      <code className="text-xs text-[--text-muted] break-all">{r.route}</code>
+                      <Badge color={r.auth === "ADMIN" ? "red" : "emerald"}>{r.auth}</Badge>
+                    </div>
+                    <p className="text-xs text-[--text-muted]">{r.desc}</p>
+                  </div>
+                ))}
+              </div>
+
+              {/* Desktop: table */}
+              <div className="mt-3 hidden sm:block overflow-x-auto rounded-xl border border-[--border]">
                 <table className="min-w-full text-sm">
                   <thead className="border-b border-[--border] bg-[--surface-2] text-xs font-medium uppercase tracking-wide text-[--text-muted]">
                     <tr>
-                      <th className="px-4 py-3">Método + Rota</th>
-                      <th className="px-4 py-3">Responsabilidade</th>
-                      <th className="px-4 py-3">Auth</th>
+                      <th className="px-4 py-3 text-left whitespace-nowrap">Método + Rota</th>
+                      <th className="px-4 py-3 text-left">Responsabilidade</th>
+                      <th className="px-4 py-3 text-left whitespace-nowrap">Auth</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-[--border] text-sm">
@@ -803,7 +876,26 @@ export default function ImportMappingDocsPage() {
                       title: "Filtra as linhas que correspondem à regra",
                       body: (
                         <div className="mt-2 space-y-2 text-xs text-[--text-muted]">
-                          <div className="overflow-x-auto rounded-lg border border-[--border]">
+                          {/* Mobile: cards */}
+                          <div className="sm:hidden space-y-2">
+                            <div className="rounded-lg border border-[--border] bg-[--surface] p-2.5 space-y-1">
+                              <Badge color="blue">PREFIX</Badge>
+                              <code className="block break-all text-xs">row.accountCode.startsWith(code)</code>
+                              <p className="text-emerald-600 dark:text-emerald-400">✓ 4.1.1 · 4.1.2.03 · 4.10</p>
+                            </div>
+                            <div className="rounded-lg border border-[--border] bg-[--surface-2] p-2.5 space-y-1">
+                              <Badge color="purple">EXACT</Badge>
+                              <code className="block break-all text-xs">row.accountCode === code</code>
+                              <p className="text-red-600 dark:text-red-400">✗ 4.1.1 — só &quot;4.1&quot; exato</p>
+                            </div>
+                            <div className="rounded-lg border border-[--border] bg-[--surface] p-2.5 space-y-1">
+                              <Badge color="amber">LIST</Badge>
+                              <code className="block break-all text-xs">codes.includes(row.accountCode)</code>
+                              <p>Itera todos os códigos da lista; a conta precisa ser igual a algum deles</p>
+                            </div>
+                          </div>
+                          {/* Desktop: table */}
+                          <div className="hidden sm:block overflow-x-auto rounded-lg border border-[--border]">
                             <table className="min-w-full">
                               <thead className="border-b border-[--border] bg-[--surface-2] text-xs font-medium uppercase tracking-wide">
                                 <tr>
@@ -859,7 +951,7 @@ export default function ImportMappingDocsPage() {
                       title: "Agrega os valores das linhas capturadas",
                       body: (
                         <div className="mt-2 space-y-2 text-xs text-[--text-muted]">
-                          <div className="flex gap-3">
+                          <div className="flex flex-col sm:flex-row gap-3">
                             <div className="flex-1 rounded-lg border border-[--border] bg-[--surface-2] p-3">
                               <p><Badge color="blue">SUM</Badge></p>
                               <p className="mt-1">Soma aritmética preservando sinal. Créditos podem ser negativos e isso é mantido.</p>
@@ -883,7 +975,7 @@ export default function ImportMappingDocsPage() {
                   ].map((item) => (
                     <li key={item.n} className="flex gap-3">
                       <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-brand text-xs font-bold text-white">{item.n}</span>
-                      <div>
+                      <div className="min-w-0 flex-1">
                         <p className="text-sm font-medium text-foreground">{item.title}</p>
                         {item.body}
                       </div>

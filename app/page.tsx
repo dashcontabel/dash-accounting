@@ -238,7 +238,16 @@ export default function Home() {
       const res = await fetch(`/api/dashboard/summary?${params.toString()}`, { cache: "no-store" });
       if (res.ok) {
         const body = (await res.json()) as { companies: CompanyData[] };
-        setCompaniesData(body.companies);
+        // Normalize referenceMonth from ISO DateTime ("YYYY-MM-01T00:00:00.000Z") to "YYYY-MM"
+        setCompaniesData(
+          body.companies.map((c) => ({
+            ...c,
+            summaries: c.summaries.map((s) => ({
+              ...s,
+              referenceMonth: s.referenceMonth.slice(0, 7),
+            })),
+          }))
+        );
       } else {
         setCompaniesData([]);
       }
@@ -277,6 +286,13 @@ export default function Home() {
     [mergedSummaries, granularity, selectedYear],
   );
 
+  // For non-monthly granularities, the active period is the last (most recent) chunk.
+  // "caso não tenha" = last period may be partial — that's fine, it's still the latest data.
+  const activePeriod = useMemo(
+    () => (granularity === "monthly" ? null : (aggregatedPeriods[aggregatedPeriods.length - 1] ?? null)),
+    [granularity, aggregatedPeriods],
+  );
+
   // Reset year/month when summaries reload
   useEffect(() => {
     if (mergedSummaries.length > 0) {
@@ -290,29 +306,45 @@ export default function Home() {
     }
   }, [mergedSummaries]);
 
-  // Active KPI data: for monthly = selected month; for other granularities = full year total
+  // Active KPI data:
+  //   monthly   → selected month
+  //   otherwise → last aggregated period (last bimestral/trimestral/etc. chunk)
   const activeSummary = useMemo(() => {
     if (granularity === "monthly") {
       return mergedSummaries.find((s) => s.referenceMonth === `${selectedYear}-${selectedMonth}`);
     }
-    const annual = aggregateSummaries(mergedSummaries, "annual", selectedYear);
-    if (annual.length === 0) return undefined;
-    return { referenceMonth: selectedYear, dataJson: annual[0]!.dataJson };
-  }, [mergedSummaries, granularity, selectedYear, selectedMonth]);
+    if (!activePeriod) return undefined;
+    return { referenceMonth: activePeriod.label, dataJson: activePeriod.dataJson };
+  }, [mergedSummaries, granularity, selectedYear, selectedMonth, activePeriod]);
 
   const d = activeSummary?.dataJson ?? {};
 
-  // Chart series — consolidated (all selected companies merged)
-  const chartSeries = useMemo(
-    () =>
-      aggregatedPeriods.map((p) => ({
+  // Chart series:
+  //   monthly   → one bar per month in the selected year
+  //   otherwise → one bar per individual month inside the active period
+  const chartSeries = useMemo(() => {
+    if (granularity === "monthly") {
+      return aggregatedPeriods.map((p) => ({
         period: p.label,
         Receitas: p.dataJson["RECEITAS_TOTAL"] ?? 0,
         Despesas: p.dataJson["DESPESAS_TOTAL"] ?? 0,
         Resultado: p.dataJson["RESULTADO"] ?? 0,
-      })),
-    [aggregatedPeriods],
-  );
+      }));
+    }
+    const months = activePeriod?.months ?? [];
+    return mergedSummaries
+      .filter((s) => months.includes(s.referenceMonth))
+      .sort((a, b) => a.referenceMonth.localeCompare(b.referenceMonth))
+      .map((s) => {
+        const mm = s.referenceMonth.slice(5, 7);
+        return {
+          period: `${MONTH_LABELS[mm] ?? mm}/${selectedYear.slice(2)}`,
+          Receitas: s.dataJson["RECEITAS_TOTAL"] ?? 0,
+          Despesas: s.dataJson["DESPESAS_TOTAL"] ?? 0,
+          Resultado: s.dataJson["RESULTADO"] ?? 0,
+        };
+      });
+  }, [granularity, activePeriod, aggregatedPeriods, mergedSummaries, selectedYear]);
 
   // Per-company receitas series (for comparative bar chart when multi-company)
   const isMultiCompany = companiesData.length > 1;
@@ -320,32 +352,69 @@ export default function Home() {
 
   const comparativeSeries = useMemo(() => {
     if (!isMultiCompany) return [];
-    return aggregatedPeriods.map((period) => {
-      const obj: Record<string, string | number> = { period: period.label };
+    if (granularity === "monthly") {
+      return aggregatedPeriods.map((period) => {
+        const obj: Record<string, string | number> = { period: period.label };
+        for (const company of companiesData) {
+          const cPeriods = aggregateSummaries(company.summaries, granularity, selectedYear);
+          const match = cPeriods.find((cp) => cp.label === period.label);
+          obj[company.companyName] = match?.dataJson["RECEITAS_TOTAL"] ?? 0;
+        }
+        return obj;
+      });
+    }
+    // Non-monthly: individual months within the active period
+    const months = activePeriod?.months ?? [];
+    return months.map((month) => {
+      const mm = month.slice(5, 7);
+      const label = `${MONTH_LABELS[mm] ?? mm}/${selectedYear.slice(2)}`;
+      const obj: Record<string, string | number> = { period: label };
       for (const company of companiesData) {
-        const cPeriods = aggregateSummaries(company.summaries, granularity, selectedYear);
-        const match = cPeriods.find((cp) => cp.label === period.label);
-        obj[company.companyName] = match?.dataJson["RECEITAS_TOTAL"] ?? 0;
+        const s = company.summaries.find((cs) => cs.referenceMonth === month);
+        obj[company.companyName] = s?.dataJson["RECEITAS_TOTAL"] ?? 0;
       }
       return obj;
     });
-  }, [companiesData, aggregatedPeriods, granularity, selectedYear, isMultiCompany]);
+  }, [companiesData, aggregatedPeriods, granularity, selectedYear, isMultiCompany, activePeriod]);
 
-  // Heatmap data — Resultado per company per period
+  // Heatmap data — Resultado por empresa × mês.
+  // Columns = individual months of the active period (2 for bimestral, 3 for trimestral, etc.).
+  // For monthly multi-company: all months of the selected year.
   const heatmapData = useMemo(() => {
-    if (!isMultiCompany) return null;
+    if (companiesData.length === 0) return null;
+    if (companiesData.length === 1 && granularity === "monthly") return null;
+
+    let heatMonths: string[];
+    if (granularity === "monthly") {
+      // Multi-company monthly: union of all months in the selected year
+      const monthSet = new Set<string>();
+      companiesData.forEach((c) =>
+        c.summaries.filter((s) => s.referenceMonth.startsWith(selectedYear)).forEach((s) => monthSet.add(s.referenceMonth)),
+      );
+      heatMonths = [...monthSet].sort();
+    } else {
+      // Non-monthly: only the months that belong to the active period
+      heatMonths = activePeriod?.months ?? [];
+    }
+
+    if (heatMonths.length === 0) return null;
+
+    const cols = heatMonths.map((m) => {
+      const mm = m.slice(5, 7);
+      return `${MONTH_LABELS[mm] ?? mm}/${selectedYear.slice(2)}`;
+    });
+
     return {
       rows: companiesData.map((c) => ({ id: c.companyId, label: c.companyName })),
-      cols: aggregatedPeriods.map((p) => p.label),
-      values: companiesData.map((company) => {
-        const cPeriods = aggregateSummaries(company.summaries, granularity, selectedYear);
-        return aggregatedPeriods.map((period) => {
-          const match = cPeriods.find((cp) => cp.label === period.label);
-          return match?.dataJson["RESULTADO"] ?? 0;
-        });
-      }),
+      cols,
+      values: companiesData.map((company) =>
+        heatMonths.map((month) => {
+          const s = company.summaries.find((cs) => cs.referenceMonth === month);
+          return s?.dataJson["RESULTADO"] ?? 0;
+        }),
+      ),
     };
-  }, [companiesData, aggregatedPeriods, granularity, selectedYear, isMultiCompany]);
+  }, [companiesData, granularity, activePeriod, selectedYear]);
 
   // Pie chart data — expense breakdown for active period
   const expensePieData = useMemo(
@@ -455,11 +524,11 @@ export default function Home() {
     <AppShell role={userRole} email={userEmail} onLogout={handleLogout}>
 
       {/* ── Filter bar ── */}
-      <div className="rounded-2xl border border-zinc-100 bg-zinc-50/80 p-5 dark:border-zinc-700/50 dark:bg-zinc-800/50">
+      <div className="mb-6 rounded-2xl border border-zinc-100 bg-zinc-50/80 p-4 shadow-sm dark:border-zinc-700/50 dark:bg-zinc-800/50 sm:p-5">
         <div className="grid gap-5 sm:grid-cols-2">
 
           {/* Empresas */}
-          <div className="flex flex-col gap-1.5">
+          <div className="flex min-w-0 flex-col gap-1.5">
             <label className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-widest text-zinc-400 dark:text-zinc-500">
               <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5" />
@@ -475,7 +544,7 @@ export default function Home() {
           </div>
 
           {/* Período */}
-          <div className="flex flex-col gap-1.5">
+          <div className="flex min-w-0 flex-col gap-1.5">
             <label className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-widest text-zinc-400 dark:text-zinc-500">
               <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
@@ -580,6 +649,9 @@ export default function Home() {
                   <>
                     <strong className="text-zinc-600 dark:text-zinc-300">{companiesData.length} empresas</strong>
                     {" · "}consolidado
+                    {granularity !== "monthly" && activePeriod && (
+                      <> · <span className="font-semibold text-zinc-600 dark:text-zinc-300">{activePeriod.label}</span></>
+                    )}
                   </>
                 ) : (
                   <>
@@ -587,7 +659,7 @@ export default function Home() {
                     <strong className="text-zinc-600 dark:text-zinc-300">
                       {granularity === "monthly"
                         ? `${MONTH_LABELS[selectedMonth] ?? selectedMonth}/${selectedYear}`
-                        : selectedYear}
+                        : activePeriod?.label ?? selectedYear}
                     </strong>
                   </>
                 )}
@@ -754,17 +826,25 @@ export default function Home() {
             )}
 
             {/* ── Heatmap: Resultado por empresa × período ── */}
-            {isMultiCompany && heatmapData && (
+            {heatmapData && (
               <div className="mt-4 rounded-xl border border-zinc-100 bg-white p-4 dark:border-zinc-700/50 dark:bg-zinc-900/50">
                 <div className="mb-3 flex items-center gap-2">
                   <span className="flex h-6 w-6 items-center justify-center rounded-lg bg-blue-100 text-blue-600 dark:bg-blue-900/50 dark:text-blue-400">
                     {Icons.chart}
                   </span>
-                  <p className="text-xs font-semibold text-zinc-500 dark:text-zinc-400">Mapa de calor — Resultado por empresa × período</p>
+                  <p className="text-xs font-semibold text-zinc-500 dark:text-zinc-400">
+                    {isMultiCompany
+                      ? "Mapa de calor — Resultado por empresa × período"
+                      : "Mapa de calor — Resultado por período"}
+                  </p>
                 </div>
                 <HeatmapChart
                   data={heatmapData}
-                  subtitle="Cada célula mostra o Resultado (Receitas − Despesas) da empresa naquele período"
+                  subtitle={
+                    isMultiCompany
+                      ? "Cada célula mostra o Resultado (Receitas − Despesas) da empresa naquele período"
+                      : "Resultado (Receitas − Despesas) da empresa em cada período"
+                  }
                 />
               </div>
             )}

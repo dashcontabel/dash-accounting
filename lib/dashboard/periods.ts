@@ -92,16 +92,19 @@ export function aggregateSummaries(
     }));
   }
 
+  // Sequential chunking: group the actual available months in calendar order.
+  // This avoids partial first/last slots that happen with fixed calendar boundaries
+  // when data doesn't start on a period boundary (e.g. data starts in February).
   const chunkSize: Record<PeriodGranularity, number> = {
-    monthly: 1,
+    monthly: 1,   // not used in this branch
     bimonthly: 2,
     quarterly: 3,
     semiannual: 6,
     annual: 12,
   };
-
+  const size = chunkSize[granularity];
   const months = filtered.map((s) => s.referenceMonth);
-  const chunks = chunkMonths(months, chunkSize[granularity]);
+  const chunks = chunkMonths(months, size);
 
   return chunks.map((chunk) => {
     const chunkSummaries = filtered.filter((s) => chunk.includes(s.referenceMonth));

@@ -20,7 +20,7 @@ vi.mock("@/lib/xlsx", () => ({
 vi.mock("@/lib/prisma", () => ({
   prisma: {
     user: { findFirst: vi.fn() },
-    importBatch: { findUnique: vi.fn(), create: vi.fn(), update: vi.fn() },
+    importBatch: { findFirst: vi.fn(), findUnique: vi.fn(), create: vi.fn(), update: vi.fn() },
     accountMapping: { findMany: vi.fn() },
     dashboardMonthlySummary: { findUnique: vi.fn() },
     $transaction: vi.fn(),
@@ -39,6 +39,7 @@ describe("POST /api/imports/xlsx", () => {
 
     vi.mocked(getUserFromRequest).mockResolvedValue({ sub: "u1" } as never);
     vi.mocked(prisma.user.findFirst).mockResolvedValue({ id: "u1", role: "ADMIN" } as never);
+    vi.mocked(prisma.importBatch.findFirst).mockResolvedValue(null as never);
     vi.mocked(prisma.importBatch.findUnique).mockResolvedValue(null as never);
     vi.mocked(prisma.importBatch.create).mockResolvedValue({ id: "b1" } as never);
     vi.mocked(prisma.accountMapping.findMany).mockResolvedValue([] as never);

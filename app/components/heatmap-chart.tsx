@@ -39,6 +39,102 @@ export type HeatmapData = {
   values: number[][]; // values[rowIdx][colIdx]
 };
 
+// ── Mobile card view — one card per company ──────────────────────────────────
+
+function MobileHeatmap({ data, maxAbs }: { data: HeatmapData; maxAbs: number }) {
+  return (
+    <div className="flex flex-col gap-3">
+      {data.rows.map((row, rowIdx) => (
+        <div
+          key={row.id}
+          className="rounded-xl border border-zinc-100 bg-zinc-50/50 p-3 dark:border-zinc-700/50 dark:bg-zinc-800/30"
+        >
+          <p className="mb-2 text-xs font-semibold text-zinc-600 dark:text-zinc-300">{row.label}</p>
+          <div className="flex flex-wrap gap-1.5">
+            {data.cols.map((col, colIdx) => {
+              const value = data.values[rowIdx]?.[colIdx] ?? 0;
+              const { bg, text } = heatColor(value, maxAbs);
+              return (
+                <div
+                  key={col}
+                  className={`flex flex-col items-center rounded-lg px-2.5 py-1.5 ${bg}`}
+                  title={`R$ ${value.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}`}
+                >
+                  <span className="text-[9px] font-medium text-zinc-400 dark:text-zinc-500 leading-none mb-0.5">
+                    {col}
+                  </span>
+                  <span className={`text-[11px] font-bold leading-none ${text}`}>
+                    {value !== 0 ? formatShort(value) : "—"}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ── Desktop table view ────────────────────────────────────────────────────────
+
+function DesktopHeatmap({ data, maxAbs }: { data: HeatmapData; maxAbs: number }) {
+  return (
+    /* Scroll wrapper with right-fade hint on overflow */
+    <div className="relative">
+      <div className="overflow-x-auto [-webkit-overflow-scrolling:touch]">
+        <table className="border-collapse text-xs" style={{ minWidth: "max-content", width: "100%" }}>
+          <thead>
+            <tr>
+              {/* Sticky company-name column */}
+              <th className="sticky left-0 z-10 w-36 border-b border-zinc-200 bg-white pb-2 pr-3 text-right text-[10px] font-semibold text-zinc-400 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-500">
+                Empresa
+              </th>
+              {data.cols.map((col) => (
+                <th
+                  key={col}
+                  className="border-b border-zinc-200 pb-2 px-1 text-center text-[10px] font-semibold text-zinc-500 dark:border-zinc-700 dark:text-zinc-400"
+                  style={{ minWidth: "60px" }}
+                >
+                  {col}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {data.rows.map((row, rowIdx) => (
+              <tr key={row.id}>
+                {/* Sticky row label */}
+                <td className="sticky left-0 z-10 py-1 pr-3 text-right text-[11px] font-medium text-zinc-600 dark:text-zinc-300 whitespace-nowrap bg-white dark:bg-zinc-900">
+                  {row.label}
+                </td>
+                {data.cols.map((col, colIdx) => {
+                  const value = data.values[rowIdx]?.[colIdx] ?? 0;
+                  const { bg, text } = heatColor(value, maxAbs);
+                  return (
+                    <td key={col} className="px-0.5 py-0.5">
+                      <div
+                        className={`flex h-9 items-center justify-center rounded-md text-[11px] font-semibold transition-opacity hover:opacity-80 ${bg} ${text}`}
+                        title={`${row.label} · ${col}: R$ ${value.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}`}
+                      >
+                        {value !== 0 ? formatShort(value) : "—"}
+                      </div>
+                    </td>
+                  );
+                })}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {/* Scroll-hint shadow on the right */}
+      <div className="pointer-events-none absolute inset-y-0 right-0 w-8 bg-linear-to-l from-white to-transparent dark:from-zinc-900 sm:hidden" />
+    </div>
+  );
+}
+
+// ── Public component ─────────────────────────────────────────────────────────
+
 export default function HeatmapChart({
   data,
   title,
@@ -61,8 +157,6 @@ export default function HeatmapChart({
     1,
   );
 
-  const colCount = data.cols.length;
-
   return (
     <div>
       {(title ?? subtitle) && (
@@ -72,61 +166,28 @@ export default function HeatmapChart({
         </div>
       )}
 
-      <div className="overflow-x-auto">
-        <table className="w-full min-w-max border-collapse text-xs">
-          <thead>
-            <tr>
-              {/* Top-left blank cell */}
-              <th className="w-32 border-b border-zinc-200 pb-2 pr-3 text-right text-[10px] font-semibold text-zinc-400 dark:border-zinc-700 dark:text-zinc-500">
-                Empresa
-              </th>
-              {data.cols.map((col) => (
-                <th
-                  key={col}
-                  className="border-b border-zinc-200 pb-2 px-1 text-center text-[10px] font-semibold text-zinc-500 dark:border-zinc-700 dark:text-zinc-400"
-                  style={{ minWidth: `${Math.max(56, Math.floor(320 / colCount))}px` }}
-                >
-                  {col}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {data.rows.map((row, rowIdx) => (
-              <tr key={row.id}>
-                <td className="py-1 pr-3 text-right text-[11px] font-medium text-zinc-600 dark:text-zinc-300 whitespace-nowrap">
-                  {row.label}
-                </td>
-                {data.cols.map((col, colIdx) => {
-                  const value = data.values[rowIdx]?.[colIdx] ?? 0;
-                  const { bg, text } = heatColor(value, maxAbs);
-                  return (
-                    <td key={col} className="px-0.5 py-0.5">
-                      <div
-                        className={`flex h-9 items-center justify-center rounded-md text-[11px] font-semibold transition-opacity hover:opacity-80 ${bg} ${text}`}
-                        title={`${row.label} · ${col}: R$ ${value.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}`}
-                      >
-                        {value !== 0 ? formatShort(value) : "—"}
-                      </div>
-                    </td>
-                  );
-                })}
-              </tr>
-            ))}
-          </tbody>
-        </table>
+      {/* Mobile: card stacked layout */}
+      <div className="sm:hidden">
+        <MobileHeatmap data={data} maxAbs={maxAbs} />
+      </div>
+
+      {/* Desktop: scrollable table with sticky first column */}
+      <div className="hidden sm:block">
+        <DesktopHeatmap data={data} maxAbs={maxAbs} />
       </div>
 
       {/* Legend */}
-      <div className="mt-3 flex items-center justify-end gap-3 text-[10px] text-zinc-400 dark:text-zinc-500">
+      <div className="mt-3 flex flex-wrap items-center justify-end gap-3 text-[10px] text-zinc-400 dark:text-zinc-500">
         <span className="flex items-center gap-1">
           <span className="inline-block h-3 w-5 rounded bg-red-400 dark:bg-red-600" />
-          Déficit (quanto maior, mais escuro)
+          Déficit
         </span>
         <span className="flex items-center gap-1">
           <span className="inline-block h-3 w-5 rounded bg-emerald-400 dark:bg-emerald-600" />
-          Superávit (quanto maior, mais escuro)
+          Superávit
         </span>
+        <span className="text-zinc-300 dark:text-zinc-600">·</span>
+        <span>Intensidade = magnitude do valor</span>
       </div>
     </div>
   );

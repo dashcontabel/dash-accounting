@@ -56,19 +56,24 @@ describe("Home dashboard", () => {
 
     render(<Home />);
 
-    // Both company names appear as checkbox labels
-    expect(await screen.findByText("Empresa 1")).toBeInTheDocument();
-    expect(await screen.findByText("Empresa 2")).toBeInTheDocument();
+    // Trigger button shows the initially selected company name
+    const triggerBtn = await screen.findByRole("button", { name: "Empresa 1" });
+    expect(triggerBtn).toBeInTheDocument();
 
-    // Initially c1 is checked (from activeCompanyId). Click c1 checkbox to uncheck it so
-    // only c2 becomes active → triggers context save with c2.
+    // Open the company-selection modal
+    fireEvent.click(triggerBtn);
+
+    // Both companies now appear as checkboxes inside the modal
     const c1Checkbox = screen.getByRole("checkbox", { name: "Empresa 1" });
     expect(c1Checkbox).toBeChecked();
-    fireEvent.click(c1Checkbox);
+    fireEvent.click(c1Checkbox); // uncheck Empresa 1 → draft=[]
 
-    // Now click c2 checkbox to select it (single company)
     const c2Checkbox = screen.getByRole("checkbox", { name: "Empresa 2" });
-    fireEvent.click(c2Checkbox);
+    fireEvent.click(c2Checkbox); // check Empresa 2  → draft=["c2"]
+
+    // Confirm changes in the modal
+    const confirmBtn = screen.getByRole("button", { name: "Confirmar" });
+    fireEvent.click(confirmBtn);
 
     await waitFor(() => {
       expect(fetchMock).toHaveBeenCalledWith("/api/context/active-company", {

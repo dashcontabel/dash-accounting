@@ -36,7 +36,7 @@ export default function PeriodFilter({
   onMonthChange: (m: string) => void;
 }) {
   return (
-    <div className="flex flex-col gap-2.5">
+    <div className="flex min-w-0 flex-col gap-2.5">
       {/* Granularity toggle buttons */}
       <div className="flex flex-wrap gap-1.5">
         {ALL_GRANULARITIES.map((g) => (
@@ -56,12 +56,12 @@ export default function PeriodFilter({
       </div>
 
       {/* Year + optional month selectors */}
-      <div className="flex gap-2">
+      <div className="flex flex-wrap gap-2">
         <select
           value={year}
           onChange={(e) => onYearChange(e.target.value)}
           disabled={years.length === 0}
-          className="rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm font-medium text-zinc-800 shadow-sm outline-none transition focus:border-[#0f4c81] focus:ring-2 focus:ring-[#0f4c81]/10 disabled:bg-zinc-100 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100 dark:focus:border-blue-500 dark:focus:ring-blue-500/10 dark:disabled:bg-zinc-700"
+          className="min-w-0 flex-1 rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm font-medium text-zinc-800 shadow-sm outline-none transition focus:border-[#0f4c81] focus:ring-2 focus:ring-[#0f4c81]/10 disabled:bg-zinc-100 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100 dark:focus:border-blue-500 dark:focus:ring-blue-500/10 dark:disabled:bg-zinc-700"
         >
           {years.length === 0 ? <option value="">—</option> : null}
           {years.map((y) => (
@@ -74,7 +74,7 @@ export default function PeriodFilter({
             value={month}
             onChange={(e) => onMonthChange(e.target.value)}
             disabled={monthsForYear.length === 0}
-            className="rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm font-medium text-zinc-800 shadow-sm outline-none transition focus:border-[#0f4c81] focus:ring-2 focus:ring-[#0f4c81]/10 disabled:bg-zinc-100 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100 dark:focus:border-blue-500 dark:focus:ring-blue-500/10 dark:disabled:bg-zinc-700"
+            className="min-w-0 flex-1 rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm font-medium text-zinc-800 shadow-sm outline-none transition focus:border-[#0f4c81] focus:ring-2 focus:ring-[#0f4c81]/10 disabled:bg-zinc-100 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100 dark:focus:border-blue-500 dark:focus:ring-blue-500/10 dark:disabled:bg-zinc-700"
           >
             {monthsForYear.length === 0 ? <option value="">—</option> : null}
             {monthsForYear.map((ym) => {

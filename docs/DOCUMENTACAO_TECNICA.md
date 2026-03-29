@@ -1,6 +1,6 @@
 # Documentação Técnica — dash-contabil
 
-> Versão: 1.0 — Março/2026
+> Versão: 2.0 — Março/2026
 
 ---
 
@@ -16,9 +16,10 @@
 8. [Motor de Mapeamento Contábil](#8-motor-de-mapeamento-contábil)
 9. [Parser XLSX — Arquitetura Atual](#9-parser-xlsx)
 10. [Parser CSV — Arquitetura Atual](#10-parser-csv)
-11. [Frontend — Páginas e Componentes](#11-frontend)
-12. [Testes](#12-testes)
-13. [Limitações Conhecidas e Débitos Técnicos](#13-limitações-conhecidas)
+11. [Dashboard — Lógica de Períodos e Multi-Empresa](#11-dashboard)
+12. [Frontend — Páginas e Componentes](#12-frontend)
+13. [Testes](#13-testes)
+14. [Limitações Conhecidas e Débitos Técnicos](#14-limitações-conhecidas)
 
 ---
 
@@ -48,7 +49,33 @@ Arquivo Contábil (XLSX ou CSV)
   Dashboard / Relatórios
 ```
 
-Cada empresa (**Company**) pertence a um grupo (**Group**) e pode ter múltiplos usuários vinculados (**UserCompany**). Todo upload gera um lote de importação (**ImportBatch**) com status rastreável.
+### Dashboard Multi-Empresa e Filtros de Período
+
+A partir da v2.0, o endpoint `GET /api/dashboard/summary` aceita **múltiplos `companyId`** e retorna os resumos mensais de todas as empresas solicitadas. O frontend consolida esses dados em:
+
+- **Seleção de empresas** com modal de busca (`MultiCompanySelect`)
+- **Filtros de granularidade** (Mensal / Bimestral / Trimestral / Semestral / Anual) via `PeriodFilter`
+- **Gráfico comparativo** (BarChart) com receitas de cada empresa por período
+- **Mapa de calor** (HeatmapChart) com Resultado por empresa × mês
+
+```
+DashboardMonthlySummary[]   (banco, por empresa + mês)
+        │
+        ▼
+GET /api/dashboard/summary?companyId=a&companyId=b
+        │  { companies: [{ companyId, companyName, summaries[] }] }
+        ▼
+lib/dashboard/periods.ts
+  ├── aggregateSummaries()   → agrupa meses em períodos (bimestral/trimestral/etc.)
+  └── mergeCompanySummaries() → consolida N empresas em 1 série temporal
+        │
+        ▼
+app/page.tsx
+  ├── KPIs individuais (período selecionado)
+  ├── Gráfico de linhas (evolução mensal/periódica)
+  ├── Gráfico comparativo multi-empresa
+  └── Mapa de calor (empresa × mês, sempre granularidade mensal)
+```
 
 ---
 
@@ -65,6 +92,7 @@ Cada empresa (**Company**) pertence a um grupo (**Group**) e pode ter múltiplos
 | Parsing CSV | csv-parse | 6.x |
 | Validação | Zod | 4.x |
 | Estilo | Tailwind CSS | v4 |
+| Gráficos | Recharts | 2.x |
 | Testes | Vitest + Testing Library | — |
 | Linguagem | TypeScript (strict) | ES2017 target |
 
@@ -317,6 +345,48 @@ Função `assertCompanyAccess(user, companyId)` lança erro `COMPANY_ACCESS_DENI
 
 ---
 
+### Dashboard
+
+| Método | Rota | Descrição |
+|---|---|---|
+| GET | `/api/dashboard/summary` | Resumos mensais de uma ou mais empresas |
+
+**GET /api/dashboard/summary**
+
+Aceita um ou múltiplos parâmetros `companyId`:
+
+```
+GET /api/dashboard/summary?companyId=id1
+GET /api/dashboard/summary?companyId=id1&companyId=id2
+```
+
+```json
+// Response 200
+{
+  "companies": [
+    {
+      "companyId": "uuid",
+      "companyName": "Empresa ABC",
+      "summaries": [
+        {
+          "referenceMonth": "2025-01-01T00:00:00.000Z",
+          "dataJson": {
+            "FATURAMENTO": 114987.92,
+            "IMPOSTOS": 9299.72,
+            "RESULTADO": 42310.00,
+            "SD_BANCARIO": 88000.00
+          }
+        }
+      ]
+    }
+  ]
+}
+```
+
+Valida acesso individual a cada empresa antes de retornar. Retorna `403` se o usuário não tiver acesso a qualquer uma das empresas solicitadas.
+
+---
+
 ### Importações
 
 | Método | Rota | Descrição |
@@ -503,16 +573,64 @@ index.ts          → re-exports
 
 ---
 
-## 11. Frontend
+## 11. Dashboard — Lógica de Períodos e Multi-Empresa
+
+### Localização: `lib/dashboard/periods.ts`
+
+Módulo puro (sem dependências de banco) responsável por agregar os resumos mensais em janelas temporais e consolidar dados de múltiplas empresas.
+
+### Tipos Exportados
+
+```typescript
+type PeriodGranularity = "monthly" | "bimonthly" | "quarterly" | "semiannual" | "annual";
+
+type MonthlySummary = {
+  referenceMonth: string; // "YYYY-MM"
+  dataJson: Record<string, number>;
+};
+
+type AggregatedPeriod = {
+  label: string;        // ex: "Jan/25", "Jan–Fev/25", "2025"
+  months: string[];     // meses incluídos: ["2025-01", "2025-02"]
+  dataJson: Record<string, number>;
+};
+```
+
+### `aggregateSummaries(summaries, granularity, year)`
+
+Filtra os resumos pelo ano selecionado, ordena cronologicamente e agrupa em chunks conforme a granularidade:
+
+| Granularidade | Chunk (meses) | Rótulo exemplo |
+|---|---|---|
+| `monthly` | 1 | `Jan/25` |
+| `bimonthly` | 2 | `Jan–Fev/25` |
+| `quarterly` | 3 | `Jan–Mar/25` |
+| `semiannual` | 6 | `Jan–Jun/25` |
+| `annual` | 12 | `2025` |
+
+**Regras de agregação:**
+- Campos normais: **soma** ao longo dos meses do chunk
+- `SD_BANCARIO`: **média** (saldo bancário não se acumula)
+- `RESULTADO`, `RENTABILIDADE`, `ALUGUEL_LIQUIDO`: **recalculados** a partir das somas dos campos base (evita dupla contagem)
+
+### `mergeCompanySummaries(allSummaries)`
+
+Consolida os `MonthlySummary[]` de N empresas numa única série temporal. Útil para exibir totais agregados nos gráficos principais quando múltiplas empresas são selecionadas.
+
+---
+
+## 12. Frontend — Páginas e Componentes
 
 ### Estrutura de Rotas
 
 ```
-/                     → Dashboard (mock, aguarda dados reais)
+/                     → Dashboard (dados reais de DashboardMonthlySummary)
 /login                → Tela de autenticação
 /app/imports          → Upload e listagem de importações
+/app/docs/import-mapping → Documentação interna de mapeamento
 /app/admin/companies  → CRUD de empresas (ADMIN)
 /app/admin/users      → CRUD de usuários (ADMIN)
+/app/admin/mappings   → CRUD de regras de mapeamento (ADMIN)
 ```
 
 ### Componentes Reutilizáveis
@@ -520,28 +638,76 @@ index.ts          → re-exports
 | Componente | Localização | Descrição |
 |---|---|---|
 | `AppShell` | `components/app-shell.tsx` | Layout sidebar responsivo (desktop fixo / mobile drawer) |
-| `CompanyLogo` | `components/company-logo.tsx` | Logo `/logo-barros-sa.png` com tamanho compacto ou normal |
+| `CompanyLogo` | `components/company-logo.tsx` | Logo com tamanho compacto ou normal |
 | `LoginForm` | `login/login-form.tsx` | Formulário de autenticação, redireciona via `?next=` |
+| `MultiCompanySelect` | `components/multi-company-select.tsx` | Seletor de empresas com modal |
+| `PeriodFilter` | `components/period-filter.tsx` | Filtro de granularidade + ano + mês |
+| `HeatmapChart` | `components/heatmap-chart.tsx` | Mapa de calor Resultado por empresa × mês |
 
-### Estado do Dashboard
+### `MultiCompanySelect`
 
-A página principal (`app/page.tsx`) ainda usa **dados mockados** para as métricas. A integração real com `DashboardMonthlySummary` é um trabalho em aberto.
+Componente de seleção de múltiplas empresas com padrão de trigger + modal:
+
+- **Trigger**: botão compacto com indicador colorido (◉ zinc = nenhuma, ◉ emerald = todas, ◉ azul = parcial) e rótulo dinâmico
+- **Modal (`CompanyModal`)**: overlay com backdrop, campo de busca (visível quando > 6 empresas), checkbox "Todas as empresas" com estado indeterminado, lista com scroll e rodapé com contagem + botões Cancelar / Confirmar
+- **Estado draft**: alterações no modal só se propagam ao confirmar — clique fora ou Escape cancela sem efeito
+- **Responsividade**: `max-width: min(24rem, calc(100vw - 2rem))` garante que não estoure em telas estreitas; nomes longos quebram linha com `wrap-break-word`
+
+### `PeriodFilter`
+
+Controles de período agrupados em um único componente:
+
+- Cinco botões de granularidade (Mensal / Bimestral / Trimestral / Semestral / Anual)
+- `<select>` de ano (flex-1, nunca estoura o container)
+- `<select>` de mês (exibido apenas quando granularidade = Mensal)
+
+### `HeatmapChart`
+
+Visualização de Resultado por empresa × mês com escala de cores divergente (verde = superávit, vermelho = déficit, intensidade proporcional à magnitude).
+
+- **Desktop** (`sm:block`): tabela com primeira coluna sticky (`sticky left-0`) para que os nomes das empresas permaneçam visíveis durante scroll horizontal; gradiente de scroll-hint visível em mobile
+- **Mobile** (`sm:hidden`): layout de cards empilhados — um card por empresa, com as células de mês dispostas em grade flexível com quebra de linha
+- O heatmap usa **sempre granularidade mensal** (colunas = Jan–Dez), independentemente do filtro de período selecionado nos gráficos acima
+
+### Dashboard — Estado e Fluxo de Dados (`app/page.tsx`)
+
+```
+mount
+  └── GET /api/auth/me
+      → allowedCompanies, activeCompanyId → selectedCompanyIds (state)
+
+selectedCompanyIds change
+  └── GET /api/dashboard/summary?companyId=...
+      → companiesData: CompanyData[]
+
+companiesData change
+  ├── mergedSummaries = mergeCompanySummaries(companiesData)
+  ├── aggregatedPeriods = aggregateSummaries(merged, granularity, year)
+  ├── activeSummary = dados do período/mês selecionado → KPIs, gráficos
+  ├── comparativeSeries = receitas de cada empresa por período (multi-empresa)
+  └── heatmapData = resultado mensal por empresa (sempre monthly)
+```
+
+**Visibilidade dos blocos:**
+- KPIs + gráfico principal: sempre visíveis com qualquer seleção
+- Gráfico comparativo (BarChart multi-empresa): visível quando `companiesData.length > 1`
+- Mapa de calor: visível quando `companiesData.length > 0` **e** `granularity ≠ "monthly"`, **ou** `companiesData.length > 1`
 
 ---
 
-## 12. Testes
+## 13. Testes
 
-Testes usando **Vitest** + `@testing-library/react` (JSDOM).
+Testes usando **Vitest** + `@testing-library/react` (JSDOM). Total: **37 testes, 0 falhas**.
 
 | Arquivo | Cobertura |
 |---|---|
-| `app/page.test.tsx` | Renderização da home |
+| `app/page.test.tsx` | Renderização do dashboard (multi-empresa, filtros) |
 | `app/login/login-form.test.tsx` | Fluxo de login no cliente |
 | `app/api/auth/login/route.test.ts` | Endpoint de login (rate limit, credenciais) |
 | `app/api/auth/me/route.test.ts` | Endpoint /me (sessão, empresas) |
 | `app/api/admin/users/route.test.ts` | CRUD de usuários (admin guard) |
 | `app/api/imports/route.test.ts` | Upload CSV (idempotência, parse) |
-| `app/api/imports/xlsx/route.test.ts` | Upload XLSX (mapeamento, summary) |
+| `app/api/imports/xlsx/route.test.ts` | Upload XLSX (mapeamento, summary, idempotência) |
 | `app/api/admin/mappings/seed/route.test.ts` | Seed de mapeamentos |
 | `app/api/context/active-company/route.test.ts` | Definição de empresa ativa |
 | `lib/auth/admin-guard.test.ts` | Guard de admin |
@@ -550,33 +716,34 @@ Testes usando **Vitest** + `@testing-library/react` (JSDOM).
 | `lib/xlsx/mapping-engine.test.ts` | Motor de mapeamento |
 | `lib/xlsx/parser.test.ts` | Parser XLSX |
 | `lib/xlsx/workbook.test.ts` | Leitura de workbook |
+| `lib/dashboard/periods.test.ts` | Agregação de períodos e merge multi-empresa |
 
 Configuração em `vitest.config.ts` + `vitest.setup.ts`.
 
 ---
 
-## 13. Limitações Conhecidas
+## 14. Limitações Conhecidas
 
-### L1 — Dashboard com dados mockados
-A página `/` ainda usa métricas geradas deterministicamente a partir do `companyId`. A integração com `DashboardMonthlySummary` precisa ser implementada.
+### L1 — ImportBatch para CSV não gera DashboardMonthlySummary
+O endpoint `POST /api/imports` (CSV) salva `LedgerEntry` no banco mas **não executa o motor de mapeamento** nem gera `DashboardMonthlySummary`. Apenas o fluxo XLSX produz o resumo do dashboard utilizado nos gráficos.
 
-### L2 — ImportBatch para CSV não gera DashboardMonthlySummary
-O endpoint `POST /api/imports` (CSV) salva `LedgerEntry` no banco mas **não executa o motor de mapeamento** nem gera `DashboardMonthlySummary`. Apenas o fluxo XLSX produz o resumo do dashboard.
-
-### L3 — Parser XLSX lê apenas a primeira aba
+### L2 — Parser XLSX lê apenas a primeira aba
 O `workbook.ts` acessa `SheetNames[0]`. Se o XLSX enviado tiver múltiplas abas (como o arquivo "BASE PARA POWER BI.xlsx"), apenas a primeira aba é processada.
 
-### L4 — Parser XLSX não lida com `Descrição da conta` nas sub-colunas
+### L3 — Parser XLSX não lida com `Descrição da conta` nas sub-colunas
 No formato de balancete exportado por sistemas contábeis, a descrição é "indentada" — colocada em colunas diferentes conforme o nível hierárquico. O parser atual usa um único índice de coluna para a descrição, perdendo nomes de contas em níveis mais profundos.
 
-### L5 — Offset de colunas com células mescladas
+### L4 — Offset de colunas com células mescladas
 Em arquivos Excel com células mescladas no cabeçalho (como "Saldo Anterior" mesclado em P:T), o índice detectado no cabeçalho pode divergir do índice onde os dados realmente aparecem nas linhas de dado. Isso causará leituras de `saldo_anterior` como zero.
 
-### L6 — Sem suporte a hierarquia / contas-pai vs. contas-folha
+### L5 — Sem suporte a hierarquia / contas-pai vs. contas-folha
 O parser importa todas as linhas com código válido, incluindo contas agrupamento (pai). Se o arquivo tiver tanto a conta "4.1.1" (total) quanto a "4.1.1.02" e "4.1.1.02.001" (folhas), o motor de mapeamento com regra PREFIX vai acumular os valores múltiplas vezes (dupla contagem).
 
-### L7 — AccountMapping é global (sem escopo por empresa)
+### L6 — AccountMapping é global (sem escopo por empresa)
 As regras de mapeamento se aplicam a todas as empresas. Empresas com plano de contas diferente precisariam de um conjunto separado de `AccountMapping` (não suportado hoje).
 
-### L8 — Rate limiter em memória (sem persistência)
+### L7 — Rate limiter em memória (sem persistência)
 O limitador de tentativas de login é baseado em `Map` em memória. Em ambientes multi-processo ou após restart, os contadores são perdidos.
+
+### L8 — `mergeCompanySummaries` — SD_BANCARIO multi-empresa
+Ao consolidar N empresas, o `SD_BANCARIO` é somado (somas dos saldos bancários de todas as empresas). Em casos onde se deseja o saldo total do grupo, isso é correto; mas se a intenção for a média do grupo, seria necessário uma lógica adicional.

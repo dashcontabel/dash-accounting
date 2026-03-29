@@ -17,7 +17,7 @@ describe("Home dashboard", () => {
     vi.clearAllMocks();
   });
 
-  it("shows company selector for ADMIN and saves active company", async () => {
+  it("shows multi-company selector for ADMIN and saves active company on single selection", async () => {
     const fetchMock = vi.fn().mockImplementation((url: string) => {
       if (url === "/api/auth/me") {
         return Promise.resolve({
@@ -45,10 +45,10 @@ describe("Home dashboard", () => {
         });
       }
 
-      // /api/dashboard/summary - empty summaries
+      // /api/dashboard/summary - empty companies
       return Promise.resolve({
         ok: true,
-        json: vi.fn().mockResolvedValue({ summaries: [] }),
+        json: vi.fn().mockResolvedValue({ companies: [] }),
       });
     });
 
@@ -56,16 +56,29 @@ describe("Home dashboard", () => {
 
     render(<Home />);
 
-    expect(await screen.findAllByText("admin@dashcontabil.com")).not.toHaveLength(0);
-    const select = screen.getByLabelText("Empresa");
-    fireEvent.change(select, { target: { value: "c2" } });
+    // Trigger button shows the initially selected company name
+    const triggerBtn = await screen.findByRole("button", { name: "Empresa 1" });
+    expect(triggerBtn).toBeInTheDocument();
+
+    // Open the company-selection modal
+    fireEvent.click(triggerBtn);
+
+    // Both companies now appear as checkboxes inside the modal
+    const c1Checkbox = screen.getByRole("checkbox", { name: "Empresa 1" });
+    expect(c1Checkbox).toBeChecked();
+    fireEvent.click(c1Checkbox); // uncheck Empresa 1 → draft=[]
+
+    const c2Checkbox = screen.getByRole("checkbox", { name: "Empresa 2" });
+    fireEvent.click(c2Checkbox); // check Empresa 2  → draft=["c2"]
+
+    // Confirm changes in the modal
+    const confirmBtn = screen.getByRole("button", { name: "Confirmar" });
+    fireEvent.click(confirmBtn);
 
     await waitFor(() => {
       expect(fetchMock).toHaveBeenCalledWith("/api/context/active-company", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ companyId: "c2" }),
       });
     });
@@ -114,11 +127,17 @@ describe("Home dashboard", () => {
         if (url === "/api/context/active-company") {
           return Promise.resolve({ ok: true, json: vi.fn().mockResolvedValue({}) });
         }
-        // /api/dashboard/summary
+        // /api/dashboard/summary — returns new multi-company format
         return Promise.resolve({
           ok: true,
           json: vi.fn().mockResolvedValue({
-            summaries: [{ referenceMonth: "2024-01", dataJson: mockSummary }],
+            companies: [
+              {
+                companyId: "c1",
+                companyName: "Empresa 1",
+                summaries: [{ referenceMonth: "2024-01", dataJson: mockSummary }],
+              },
+            ],
           }),
         });
       }),

@@ -20,7 +20,17 @@ import {
 } from "recharts";
 
 import AppShell from "./components/app-shell";
+import MultiCompanySelect from "./components/multi-company-select";
+import PeriodFilter from "./components/period-filter";
+import HeatmapChart from "./components/heatmap-chart";
 import { useTheme } from "./components/theme-provider";
+import {
+  aggregateSummaries,
+  mergeCompanySummaries,
+  PERIOD_LABELS,
+  type PeriodGranularity,
+  type MonthlySummary,
+} from "@/lib/dashboard/periods";
 
 type MeResponse = {
   user?: {
@@ -37,9 +47,10 @@ type MeResponse = {
 
 type DashboardData = Record<string, number>;
 
-type MonthlySummary = {
-  referenceMonth: string; // "YYYY-MM"
-  dataJson: DashboardData;
+type CompanyData = {
+  companyId: string;
+  companyName: string;
+  summaries: MonthlySummary[];
 };
 
 const MONTH_LABELS: Record<string, string> = {
@@ -169,11 +180,12 @@ export default function Home() {
   const [allowedCompanies, setAllowedCompanies] = useState<
     Array<{ id: string; name: string; groupId: string }>
   >([]);
-  const [selectedCompanyId, setSelectedCompanyId] = useState<string>("");
+  const [selectedCompanyIds, setSelectedCompanyIds] = useState<string[]>([]);
   const [isSavingCompany, setIsSavingCompany] = useState(false);
   const [contextMessage, setContextMessage] = useState<string | null>(null);
 
-  const [summaries, setSummaries] = useState<MonthlySummary[]>([]);
+  const [companiesData, setCompaniesData] = useState<CompanyData[]>([]);
+  const [granularity, setGranularity] = useState<PeriodGranularity>("monthly");
   const [selectedYear, setSelectedYear] = useState<string>("");
   const [selectedMonth, setSelectedMonth] = useState<string>("");
   const [loadingSummary, setLoadingSummary] = useState(false);
@@ -204,7 +216,7 @@ export default function Home() {
           setUserEmail(data.user.email);
           setUserRole(data.user.role);
           setAllowedCompanies(companies);
-          setSelectedCompanyId(initialCompanyId);
+          setSelectedCompanyIds(initialCompanyId ? [initialCompanyId] : []);
         }
       } catch {
         router.push("/login");
@@ -215,34 +227,76 @@ export default function Home() {
     return () => { isMounted = false; };
   }, [router]);
 
-  // ── Load summaries when company changes ─────────────────────────────────
+  // ── Load summaries when selected companies change ────────────────────────
 
-  const loadSummaries = useCallback(async (companyId: string) => {
-    if (!companyId) { setSummaries([]); return; }
+  const loadSummaries = useCallback(async (ids: string[]) => {
+    if (ids.length === 0) { setCompaniesData([]); return; }
     setLoadingSummary(true);
     try {
-      const res = await fetch(`/api/dashboard/summary?companyId=${companyId}`, { cache: "no-store" });
+      const params = new URLSearchParams();
+      for (const id of ids) params.append("companyId", id);
+      const res = await fetch(`/api/dashboard/summary?${params.toString()}`, { cache: "no-store" });
       if (res.ok) {
-        const body = (await res.json()) as { summaries: MonthlySummary[] };
-        setSummaries(body.summaries);
+        const body = (await res.json()) as { companies: CompanyData[] };
+        // Normalize referenceMonth from ISO DateTime ("YYYY-MM-01T00:00:00.000Z") to "YYYY-MM"
+        setCompaniesData(
+          body.companies.map((c) => ({
+            ...c,
+            summaries: c.summaries.map((s) => ({
+              ...s,
+              referenceMonth: s.referenceMonth.slice(0, 7),
+            })),
+          }))
+        );
       } else {
-        setSummaries([]);
+        setCompaniesData([]);
       }
     } catch {
-      setSummaries([]);
+      setCompaniesData([]);
     } finally {
       setLoadingSummary(false);
     }
   }, []);
 
   useEffect(() => {
-    void loadSummaries(selectedCompanyId);
-  }, [selectedCompanyId, loadSummaries]);
+    void loadSummaries(selectedCompanyIds);
+  }, [selectedCompanyIds, loadSummaries]);
 
-  // Reset period selectors when summaries reload
+  // ── Derived state ────────────────────────────────────────────────────────
+
+  // Merge summaries across selected companies (union of all months, summed fields)
+  const mergedSummaries = useMemo(
+    () => mergeCompanySummaries(companiesData),
+    [companiesData],
+  );
+
+  const years = useMemo(
+    () => [...new Set(mergedSummaries.map((s) => s.referenceMonth.slice(0, 4)))].sort(),
+    [mergedSummaries],
+  );
+
+  const monthsForYear = useMemo(
+    () => mergedSummaries.filter((s) => s.referenceMonth.startsWith(selectedYear)).map((s) => s.referenceMonth),
+    [mergedSummaries, selectedYear],
+  );
+
+  // Aggregated periods for charts (grouped by granularity)
+  const aggregatedPeriods = useMemo(
+    () => aggregateSummaries(mergedSummaries, granularity, selectedYear),
+    [mergedSummaries, granularity, selectedYear],
+  );
+
+  // For non-monthly granularities, the active period is the last (most recent) chunk.
+  // "caso não tenha" = last period may be partial — that's fine, it's still the latest data.
+  const activePeriod = useMemo(
+    () => (granularity === "monthly" ? null : (aggregatedPeriods[aggregatedPeriods.length - 1] ?? null)),
+    [granularity, aggregatedPeriods],
+  );
+
+  // Reset year/month when summaries reload
   useEffect(() => {
-    if (summaries.length > 0) {
-      const last = summaries[summaries.length - 1]!;
+    if (mergedSummaries.length > 0) {
+      const last = mergedSummaries[mergedSummaries.length - 1]!;
       const [y, m] = last.referenceMonth.split("-");
       setSelectedYear(y ?? "");
       setSelectedMonth(m ?? "");
@@ -250,53 +304,129 @@ export default function Home() {
       setSelectedYear("");
       setSelectedMonth("");
     }
-  }, [summaries]);
+  }, [mergedSummaries]);
 
-  // ── Derived state ────────────────────────────────────────────────────────
+  // Active KPI data:
+  //   monthly   → selected month
+  //   otherwise → last aggregated period (last bimestral/trimestral/etc. chunk)
+  const activeSummary = useMemo(() => {
+    if (granularity === "monthly") {
+      return mergedSummaries.find((s) => s.referenceMonth === `${selectedYear}-${selectedMonth}`);
+    }
+    if (!activePeriod) return undefined;
+    return { referenceMonth: activePeriod.label, dataJson: activePeriod.dataJson };
+  }, [mergedSummaries, granularity, selectedYear, selectedMonth, activePeriod]);
 
-  const years = useMemo(
-    () => [...new Set(summaries.map((s) => s.referenceMonth.slice(0, 4)))].sort(),
-    [summaries],
-  );
-
-  const monthsForYear = useMemo(
-    () => summaries.filter((s) => s.referenceMonth.startsWith(selectedYear)),
-    [summaries, selectedYear],
-  );
-
-  const activeSummary = useMemo(
-    () => summaries.find((s) => s.referenceMonth === `${selectedYear}-${selectedMonth}`),
-    [summaries, selectedYear, selectedMonth],
-  );
   const d = activeSummary?.dataJson ?? {};
 
-  // Year chart data — for recharts series
-  const yearSeries = useMemo(
-    () =>
-      summaries
-        .filter((s) => s.referenceMonth.startsWith(selectedYear))
-        .map((s) => {
-          const [, month] = s.referenceMonth.split("-");
-          return {
-            month: MONTH_LABELS[month ?? ""] ?? month ?? s.referenceMonth,
-            Receitas: get(s.dataJson, "RECEITAS_TOTAL"),
-            Despesas: get(s.dataJson, "DESPESAS_TOTAL"),
-            Resultado: get(s.dataJson, "RESULTADO"),
-          };
-        }),
-    [summaries, selectedYear],
-  );
+  // Chart series:
+  //   monthly   → one bar per month in the selected year
+  //   otherwise → one bar per individual month inside the active period
+  const chartSeries = useMemo(() => {
+    if (granularity === "monthly") {
+      return aggregatedPeriods.map((p) => ({
+        period: p.label,
+        Receitas: p.dataJson["RECEITAS_TOTAL"] ?? 0,
+        Despesas: p.dataJson["DESPESAS_TOTAL"] ?? 0,
+        Resultado: p.dataJson["RESULTADO"] ?? 0,
+      }));
+    }
+    const months = activePeriod?.months ?? [];
+    return mergedSummaries
+      .filter((s) => months.includes(s.referenceMonth))
+      .sort((a, b) => a.referenceMonth.localeCompare(b.referenceMonth))
+      .map((s) => {
+        const mm = s.referenceMonth.slice(5, 7);
+        return {
+          period: `${MONTH_LABELS[mm] ?? mm}/${selectedYear.slice(2)}`,
+          Receitas: s.dataJson["RECEITAS_TOTAL"] ?? 0,
+          Despesas: s.dataJson["DESPESAS_TOTAL"] ?? 0,
+          Resultado: s.dataJson["RESULTADO"] ?? 0,
+        };
+      });
+  }, [granularity, activePeriod, aggregatedPeriods, mergedSummaries, selectedYear]);
 
-  // Pie chart data — expense breakdown
-  const expensePieData = useMemo(() => {
-    const items = [
-      { name: "Impostos", value: get(d, "IMPOSTOS"), fill: "#ef4444" },
-      { name: "IOF/IRRF", value: get(d, "IOF_IRRF"), fill: "#f97316" },
-      { name: "Dmais Desp.", value: get(d, "DEMAIS_DESPESAS"), fill: "#eab308" },
-      { name: "Condomínio", value: get(d, "CONDOMINIO"), fill: "#a855f7" },
-    ].filter((i) => i.value > 0);
-    return items;
-  }, [d]);
+  // Per-company receitas series (for comparative bar chart when multi-company)
+  const isMultiCompany = companiesData.length > 1;
+  const COMPANY_COLORS = ["#10b981", "#0f4c81", "#f59e0b", "#ef4444", "#a855f7", "#0ea5e9"];
+
+  const comparativeSeries = useMemo(() => {
+    if (!isMultiCompany) return [];
+    if (granularity === "monthly") {
+      return aggregatedPeriods.map((period) => {
+        const obj: Record<string, string | number> = { period: period.label };
+        for (const company of companiesData) {
+          const cPeriods = aggregateSummaries(company.summaries, granularity, selectedYear);
+          const match = cPeriods.find((cp) => cp.label === period.label);
+          obj[company.companyName] = match?.dataJson["RECEITAS_TOTAL"] ?? 0;
+        }
+        return obj;
+      });
+    }
+    // Non-monthly: individual months within the active period
+    const months = activePeriod?.months ?? [];
+    return months.map((month) => {
+      const mm = month.slice(5, 7);
+      const label = `${MONTH_LABELS[mm] ?? mm}/${selectedYear.slice(2)}`;
+      const obj: Record<string, string | number> = { period: label };
+      for (const company of companiesData) {
+        const s = company.summaries.find((cs) => cs.referenceMonth === month);
+        obj[company.companyName] = s?.dataJson["RECEITAS_TOTAL"] ?? 0;
+      }
+      return obj;
+    });
+  }, [companiesData, aggregatedPeriods, granularity, selectedYear, isMultiCompany, activePeriod]);
+
+  // Heatmap data — Resultado por empresa × mês.
+  // Columns = individual months of the active period (2 for bimestral, 3 for trimestral, etc.).
+  // For monthly multi-company: all months of the selected year.
+  const heatmapData = useMemo(() => {
+    if (companiesData.length === 0) return null;
+    if (companiesData.length === 1 && granularity === "monthly") return null;
+
+    let heatMonths: string[];
+    if (granularity === "monthly") {
+      // Multi-company monthly: union of all months in the selected year
+      const monthSet = new Set<string>();
+      companiesData.forEach((c) =>
+        c.summaries.filter((s) => s.referenceMonth.startsWith(selectedYear)).forEach((s) => monthSet.add(s.referenceMonth)),
+      );
+      heatMonths = [...monthSet].sort();
+    } else {
+      // Non-monthly: only the months that belong to the active period
+      heatMonths = activePeriod?.months ?? [];
+    }
+
+    if (heatMonths.length === 0) return null;
+
+    const cols = heatMonths.map((m) => {
+      const mm = m.slice(5, 7);
+      return `${MONTH_LABELS[mm] ?? mm}/${selectedYear.slice(2)}`;
+    });
+
+    return {
+      rows: companiesData.map((c) => ({ id: c.companyId, label: c.companyName })),
+      cols,
+      values: companiesData.map((company) =>
+        heatMonths.map((month) => {
+          const s = company.summaries.find((cs) => cs.referenceMonth === month);
+          return s?.dataJson["RESULTADO"] ?? 0;
+        }),
+      ),
+    };
+  }, [companiesData, granularity, activePeriod, selectedYear]);
+
+  // Pie chart data — expense breakdown for active period
+  const expensePieData = useMemo(
+    () =>
+      [
+        { name: "Impostos", value: get(d, "IMPOSTOS"), fill: "#ef4444" },
+        { name: "IOF/IRRF", value: get(d, "IOF_IRRF"), fill: "#f97316" },
+        { name: "Dmais Desp.", value: get(d, "DEMAIS_DESPESAS"), fill: "#eab308" },
+        { name: "Condomínio", value: get(d, "CONDOMINIO"), fill: "#a855f7" },
+      ].filter((i) => i.value > 0),
+    [d],
+  );
 
   // ── Handlers ─────────────────────────────────────────────────────────────
 
@@ -309,13 +439,15 @@ export default function Home() {
     return response.ok;
   }
 
-  async function handleSelectCompany(companyId: string) {
-    setSelectedCompanyId(companyId);
+  async function handleSelectCompanies(ids: string[]) {
+    setSelectedCompanyIds(ids);
     setContextMessage(null);
-    setIsSavingCompany(true);
-    const ok = await saveDefaultCompany(companyId);
-    setContextMessage(ok ? "Empresa padrão atualizada." : "Não foi possível salvar empresa padrão.");
-    setIsSavingCompany(false);
+    if (ids.length === 1) {
+      setIsSavingCompany(true);
+      const ok = await saveDefaultCompany(ids[0]!);
+      setContextMessage(ok ? "Empresa padrão atualizada." : "Não foi possível salvar empresa padrão.");
+      setIsSavingCompany(false);
+    }
   }
 
   async function handleLogout() {
@@ -343,7 +475,8 @@ export default function Home() {
   }
 
   async function handleRecalculate() {
-    if (!selectedCompanyId || !selectedYear || !selectedMonth) return;
+    const companyId = selectedCompanyIds[0];
+    if (!companyId || !selectedYear || !selectedMonth) return;
     const referenceMonth = `${selectedYear}-${selectedMonth}`;
     setRecalculating(true);
     setRecalcMsg(null);
@@ -351,16 +484,23 @@ export default function Home() {
       const res = await fetch("/api/dashboard/recalculate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ companyId: selectedCompanyId, referenceMonth }),
+        body: JSON.stringify({ companyId, referenceMonth }),
       });
       const body = (await res.json()) as { summary?: Record<string, number>; error?: string };
       if (res.ok && body.summary) {
-        setSummaries((prev) =>
-          prev.map((s) =>
-            s.referenceMonth === referenceMonth ? { ...s, dataJson: body.summary! } : s,
+        setCompaniesData((prev) =>
+          prev.map((cd) =>
+            cd.companyId === companyId
+              ? {
+                  ...cd,
+                  summaries: cd.summaries.map((s) =>
+                    s.referenceMonth === referenceMonth ? { ...s, dataJson: body.summary! } : s,
+                  ),
+                }
+              : cd,
           ),
         );
-        setRecalcMsg(`Recalculado com sucesso.`);
+        setRecalcMsg("Recalculado com sucesso.");
       } else {
         setRecalcMsg(body.error ?? "Erro ao recalcular.");
       }
@@ -373,82 +513,58 @@ export default function Home() {
 
   // ── Render ───────────────────────────────────────────────────────────────
 
-  const isStale = activeSummary !== undefined && Object.keys(activeSummary.dataJson).length < 4;
+  // Stale data warning only applies to single-company monthly view
+  const isStale =
+    !isMultiCompany &&
+    granularity === "monthly" &&
+    activeSummary !== undefined &&
+    Object.keys(activeSummary.dataJson).length < 4;
 
   return (
     <AppShell role={userRole} email={userEmail} onLogout={handleLogout}>
 
       {/* ── Filter bar ── */}
-      <div className="rounded-2xl border border-zinc-100 bg-zinc-50/80 p-5 dark:border-zinc-700/50 dark:bg-zinc-800/50">
-        <div className="grid gap-4 sm:grid-cols-3">
+      <div className="mb-6 rounded-2xl border border-zinc-100 bg-zinc-50/80 p-4 shadow-sm dark:border-zinc-700/50 dark:bg-zinc-800/50 sm:p-5">
+        <div className="grid gap-5 sm:grid-cols-2">
 
-          {/* Empresa */}
-          <div className="flex flex-col gap-1.5">
-            <label htmlFor="sel-company" className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-widest text-zinc-400 dark:text-zinc-500">
+          {/* Empresas */}
+          <div className="flex min-w-0 flex-col gap-1.5">
+            <label className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-widest text-zinc-400 dark:text-zinc-500">
               <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5" />
               </svg>
-              Empresa
+              Empresas
             </label>
-            <select
-              id="sel-company"
-              value={selectedCompanyId}
-              onChange={(e) => void handleSelectCompany(e.target.value)}
-              disabled={isSavingCompany || allowedCompanies.length === 0}
-              className="w-full rounded-xl border border-zinc-200 bg-white px-3 py-2.5 text-sm font-medium text-zinc-800 shadow-sm outline-none transition focus:border-[#0f4c81] focus:ring-2 focus:ring-[#0f4c81]/10 disabled:bg-zinc-100 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100 dark:focus:border-blue-500 dark:focus:ring-blue-500/10 dark:disabled:bg-zinc-700"
-            >
-              <option value="" disabled>Selecione uma empresa</option>
-              {allowedCompanies.map((c) => (
-                <option key={c.id} value={c.id}>{c.name}</option>
-              ))}
-            </select>
+            <MultiCompanySelect
+              companies={allowedCompanies}
+              selected={selectedCompanyIds}
+              onChange={(ids) => void handleSelectCompanies(ids)}
+              disabled={isSavingCompany}
+            />
           </div>
 
-          {/* Ano */}
-          <div className="flex flex-col gap-1.5">
-            <label htmlFor="sel-year" className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-widest text-zinc-400 dark:text-zinc-500">
+          {/* Período */}
+          <div className="flex min-w-0 flex-col gap-1.5">
+            <label className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-widest text-zinc-400 dark:text-zinc-500">
               <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
               </svg>
-              Ano
+              Período
             </label>
-            <select
-              id="sel-year"
-              value={selectedYear}
-              onChange={(e) => {
-                setSelectedYear(e.target.value);
-                const first = summaries.find((s) => s.referenceMonth.startsWith(e.target.value));
+            <PeriodFilter
+              granularity={granularity}
+              year={selectedYear}
+              month={selectedMonth}
+              years={years}
+              monthsForYear={monthsForYear}
+              onGranularityChange={setGranularity}
+              onYearChange={(y) => {
+                setSelectedYear(y);
+                const first = mergedSummaries.find((s) => s.referenceMonth.startsWith(y));
                 if (first) setSelectedMonth(first.referenceMonth.slice(5, 7));
               }}
-              disabled={years.length === 0}
-              className="w-full rounded-xl border border-zinc-200 bg-white px-3 py-2.5 text-sm font-medium text-zinc-800 shadow-sm outline-none transition focus:border-[#0f4c81] focus:ring-2 focus:ring-[#0f4c81]/10 disabled:bg-zinc-100 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100 dark:focus:border-blue-500 dark:focus:ring-blue-500/10 dark:disabled:bg-zinc-700"
-            >
-              {years.length === 0 ? <option value="">—</option> : null}
-              {years.map((y) => <option key={y} value={y}>{y}</option>)}
-            </select>
-          </div>
-
-          {/* Mês */}
-          <div className="flex flex-col gap-1.5">
-            <label htmlFor="sel-month" className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-widest text-zinc-400 dark:text-zinc-500">
-              <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-              </svg>
-              Mês
-            </label>
-            <select
-              id="sel-month"
-              value={selectedMonth}
-              onChange={(e) => setSelectedMonth(e.target.value)}
-              disabled={monthsForYear.length === 0}
-              className="w-full rounded-xl border border-zinc-200 bg-white px-3 py-2.5 text-sm font-medium text-zinc-800 shadow-sm outline-none transition focus:border-[#0f4c81] focus:ring-2 focus:ring-[#0f4c81]/10 disabled:bg-zinc-100 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100 dark:focus:border-blue-500 dark:focus:ring-blue-500/10 dark:disabled:bg-zinc-700"
-            >
-              {monthsForYear.length === 0 ? <option value="">—</option> : null}
-              {monthsForYear.map((s) => {
-                const m = s.referenceMonth.slice(5, 7);
-                return <option key={m} value={m}>{MONTH_LABELS[m] ?? m}</option>;
-              })}
-            </select>
+              onMonthChange={setSelectedMonth}
+            />
           </div>
         </div>
 
@@ -463,7 +579,7 @@ export default function Home() {
       </div>
 
       {/* ── Empty / Loading states ── */}
-      {!selectedCompanyId ? (
+      {selectedCompanyIds.length === 0 ? (
         <div className="mt-8 flex flex-col items-center justify-center gap-3 rounded-2xl border-2 border-dashed border-zinc-200 bg-zinc-50 py-16 text-center dark:border-zinc-700 dark:bg-zinc-800/30">
           <svg className="h-10 w-10 text-zinc-300 dark:text-zinc-600" fill="none" stroke="currentColor" strokeWidth={1.5} viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5" />
@@ -475,7 +591,7 @@ export default function Home() {
           <div className="h-8 w-8 animate-spin rounded-full border-2 border-[#0f4c81] border-t-transparent dark:border-blue-400" />
           <p className="text-sm text-zinc-400 dark:text-zinc-500">Carregando dados...</p>
         </div>
-      ) : summaries.length === 0 ? (
+      ) : mergedSummaries.length === 0 ? (
         <div className="mt-8 flex flex-col items-center gap-3 rounded-2xl border-2 border-dashed border-zinc-200 bg-zinc-50 py-16 text-center dark:border-zinc-700 dark:bg-zinc-800/30">
           <svg className="h-10 w-10 text-zinc-300 dark:text-zinc-600" fill="none" stroke="currentColor" strokeWidth={1.5} viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M9 19l3 3m0 0l3-3m-3 3V10" />
@@ -529,18 +645,37 @@ export default function Home() {
           ) : (
             <div className="mt-5 flex items-center justify-between gap-3">
               <p className="text-xs text-zinc-400 dark:text-zinc-500">
-                Referência: <strong className="text-zinc-600 dark:text-zinc-300">{MONTH_LABELS[selectedMonth] ?? selectedMonth}/{selectedYear}</strong>
+                {isMultiCompany ? (
+                  <>
+                    <strong className="text-zinc-600 dark:text-zinc-300">{companiesData.length} empresas</strong>
+                    {" · "}consolidado
+                    {granularity !== "monthly" && activePeriod && (
+                      <> · <span className="font-semibold text-zinc-600 dark:text-zinc-300">{activePeriod.label}</span></>
+                    )}
+                  </>
+                ) : (
+                  <>
+                    Referência:{" "}
+                    <strong className="text-zinc-600 dark:text-zinc-300">
+                      {granularity === "monthly"
+                        ? `${MONTH_LABELS[selectedMonth] ?? selectedMonth}/${selectedYear}`
+                        : activePeriod?.label ?? selectedYear}
+                    </strong>
+                  </>
+                )}
               </p>
-              <button
-                onClick={() => void handleRecalculate()}
-                disabled={recalculating}
-                className="flex items-center gap-1.5 rounded-lg border border-zinc-200 bg-white px-3 py-1.5 text-xs font-medium text-zinc-600 shadow-sm transition hover:border-[#0f4c81]/40 hover:bg-[#f5f8fc] hover:text-[#0f4c81] disabled:opacity-50 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:border-blue-500/40 dark:hover:bg-blue-900/20 dark:hover:text-blue-400"
-              >
-                <svg className={`h-3.5 w-3.5 ${recalculating ? "animate-spin" : ""}`} fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                </svg>
-                {recalculating ? "Recalculando..." : "Recalcular período"}
-              </button>
+              {!isMultiCompany && granularity === "monthly" && (
+                <button
+                  onClick={() => void handleRecalculate()}
+                  disabled={recalculating}
+                  className="flex items-center gap-1.5 rounded-lg border border-zinc-200 bg-white px-3 py-1.5 text-xs font-medium text-zinc-600 shadow-sm transition hover:border-[#0f4c81]/40 hover:bg-[#f5f8fc] hover:text-[#0f4c81] disabled:opacity-50 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:border-blue-500/40 dark:hover:bg-blue-900/20 dark:hover:text-blue-400"
+                >
+                  <svg className={`h-3.5 w-3.5 ${recalculating ? "animate-spin" : ""}`} fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                  </svg>
+                  {recalculating ? "Recalculando..." : "Recalcular período"}
+                </button>
+              )}
             </div>
           )}
           {recalcMsg ? (
@@ -576,19 +711,31 @@ export default function Home() {
               <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-blue-100 text-blue-600 dark:bg-blue-900/50 dark:text-blue-400">
                 {Icons.chart}
               </span>
-              <h2 className="text-sm font-bold text-zinc-700 dark:text-zinc-200">Análise Anual — {selectedYear}</h2>
+              <h2 className="text-sm font-bold text-zinc-700 dark:text-zinc-200">
+                Análise — {selectedYear}
+                {granularity !== "monthly" && (
+                  <span className="ml-2 rounded-md bg-blue-100 px-1.5 py-0.5 text-[10px] font-semibold text-blue-700 dark:bg-blue-900/40 dark:text-blue-300">
+                    {PERIOD_LABELS[granularity]}
+                  </span>
+                )}
+                {isMultiCompany && (
+                  <span className="ml-2 rounded-md bg-purple-100 px-1.5 py-0.5 text-[10px] font-semibold text-purple-700 dark:bg-purple-900/40 dark:text-purple-300">
+                    Consolidado
+                  </span>
+                )}
+              </h2>
               <div className="ml-2 h-px flex-1 bg-zinc-200 dark:bg-zinc-700" />
             </div>
 
             <div className="grid gap-4 lg:grid-cols-5">
               {/* Bar chart */}
               <div className="col-span-3 rounded-xl border border-zinc-100 bg-white p-4 dark:border-zinc-700/50 dark:bg-zinc-900/50">
-                <p className="mb-3 text-xs font-semibold text-zinc-500 dark:text-zinc-400">Receitas × Despesas por mês</p>
-                {yearSeries.length > 0 ? (
+                <p className="mb-3 text-xs font-semibold text-zinc-500 dark:text-zinc-400">Receitas × Despesas por período</p>
+                {chartSeries.length > 0 ? (
                   <ResponsiveContainer width="100%" height={240}>
-                    <BarChart data={yearSeries} barCategoryGap="30%" barGap={3}>
+                    <BarChart data={chartSeries} barCategoryGap="30%" barGap={3}>
                       <CartesianGrid strokeDasharray="3 3" stroke={chartTheme.grid} vertical={false} />
-                      <XAxis dataKey="month" tick={{ fontSize: 11, fill: chartTheme.tick }} axisLine={false} tickLine={false} />
+                      <XAxis dataKey="period" tick={{ fontSize: 11, fill: chartTheme.tick }} axisLine={false} tickLine={false} />
                       <YAxis tickFormatter={formatCurrencyShort} width={70} tick={{ fontSize: 10, fill: chartTheme.tick }} axisLine={false} tickLine={false} />
                       <Tooltip formatter={currencyTooltipFormatter} contentStyle={{ fontSize: 12, borderRadius: 10, border: `1px solid ${chartTheme.tooltip.border}`, background: chartTheme.tooltip.background, boxShadow: "0 4px 12px rgba(0,0,0,.15)" }} labelStyle={{ fontWeight: 600, color: chartTheme.tooltip.label }} />
                       <Legend wrapperStyle={{ fontSize: 11, paddingTop: 8 }} />
@@ -632,20 +779,73 @@ export default function Home() {
               </div>
             </div>
 
-            {/* Line chart */}
-            {yearSeries.length > 1 && (
+            {/* Line chart — resultado trend */}
+            {chartSeries.length > 1 && (
               <div className="mt-4 rounded-xl border border-zinc-100 bg-white p-4 dark:border-zinc-700/50 dark:bg-zinc-900/50">
-                <p className="mb-3 text-xs font-semibold text-zinc-500 dark:text-zinc-400">Tendência do resultado mensal</p>
+                <p className="mb-3 text-xs font-semibold text-zinc-500 dark:text-zinc-400">Tendência do resultado</p>
                 <ResponsiveContainer width="100%" height={170}>
-                  <LineChart data={yearSeries}>
+                  <LineChart data={chartSeries}>
                     <CartesianGrid strokeDasharray="3 3" stroke={chartTheme.grid} vertical={false} />
-                    <XAxis dataKey="month" tick={{ fontSize: 11, fill: chartTheme.tick }} axisLine={false} tickLine={false} />
+                    <XAxis dataKey="period" tick={{ fontSize: 11, fill: chartTheme.tick }} axisLine={false} tickLine={false} />
                     <YAxis tickFormatter={formatCurrencyShort} width={70} tick={{ fontSize: 10, fill: chartTheme.tick }} axisLine={false} tickLine={false} />
                     <Tooltip formatter={currencyTooltipFormatter} contentStyle={{ fontSize: 12, borderRadius: 10, border: `1px solid ${chartTheme.tooltip.border}`, background: chartTheme.tooltip.background, boxShadow: "0 4px 12px rgba(0,0,0,.15)" }} labelStyle={{ fontWeight: 600, color: chartTheme.tooltip.label }} />
                     <ReferenceLine y={0} stroke={chartTheme.grid} strokeDasharray="4 2" />
                     <Line type="monotone" dataKey="Resultado" stroke={theme === "dark" ? "#60a5fa" : "#0f4c81"} strokeWidth={2.5} dot={{ fill: theme === "dark" ? "#60a5fa" : "#0f4c81", r: 4, strokeWidth: 0 }} activeDot={{ r: 6 }} />
                   </LineChart>
                 </ResponsiveContainer>
+              </div>
+            )}
+
+            {/* ── Multi-company comparative section ── */}
+            {isMultiCompany && comparativeSeries.length > 0 && (
+              <div className="mt-4 rounded-xl border border-purple-100 bg-purple-50/30 p-4 dark:border-purple-900/30 dark:bg-purple-950/10">
+                <div className="mb-3 flex items-center gap-2">
+                  <span className="flex h-6 w-6 items-center justify-center rounded-lg bg-purple-100 text-purple-600 dark:bg-purple-900/50 dark:text-purple-400">
+                    {Icons.building}
+                  </span>
+                  <p className="text-xs font-semibold text-purple-800 dark:text-purple-300">Receitas por empresa</p>
+                </div>
+                <ResponsiveContainer width="100%" height={220}>
+                  <BarChart data={comparativeSeries} barCategoryGap="25%" barGap={2}>
+                    <CartesianGrid strokeDasharray="3 3" stroke={chartTheme.grid} vertical={false} />
+                    <XAxis dataKey="period" tick={{ fontSize: 11, fill: chartTheme.tick }} axisLine={false} tickLine={false} />
+                    <YAxis tickFormatter={formatCurrencyShort} width={70} tick={{ fontSize: 10, fill: chartTheme.tick }} axisLine={false} tickLine={false} />
+                    <Tooltip formatter={currencyTooltipFormatter} contentStyle={{ fontSize: 12, borderRadius: 10, border: `1px solid ${chartTheme.tooltip.border}`, background: chartTheme.tooltip.background, boxShadow: "0 4px 12px rgba(0,0,0,.15)" }} labelStyle={{ fontWeight: 600, color: chartTheme.tooltip.label }} />
+                    <Legend wrapperStyle={{ fontSize: 11, paddingTop: 8 }} />
+                    {companiesData.map((company, i) => (
+                      <Bar
+                        key={company.companyId}
+                        dataKey={company.companyName}
+                        fill={COMPANY_COLORS[i % COMPANY_COLORS.length]}
+                        radius={[4, 4, 0, 0]}
+                      />
+                    ))}
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            )}
+
+            {/* ── Heatmap: Resultado por empresa × período ── */}
+            {heatmapData && (
+              <div className="mt-4 rounded-xl border border-zinc-100 bg-white p-4 dark:border-zinc-700/50 dark:bg-zinc-900/50">
+                <div className="mb-3 flex items-center gap-2">
+                  <span className="flex h-6 w-6 items-center justify-center rounded-lg bg-blue-100 text-blue-600 dark:bg-blue-900/50 dark:text-blue-400">
+                    {Icons.chart}
+                  </span>
+                  <p className="text-xs font-semibold text-zinc-500 dark:text-zinc-400">
+                    {isMultiCompany
+                      ? "Mapa de calor — Resultado por empresa × período"
+                      : "Mapa de calor — Resultado por período"}
+                  </p>
+                </div>
+                <HeatmapChart
+                  data={heatmapData}
+                  subtitle={
+                    isMultiCompany
+                      ? "Cada célula mostra o Resultado (Receitas − Despesas) da empresa naquele período"
+                      : "Resultado (Receitas − Despesas) da empresa em cada período"
+                  }
+                />
               </div>
             )}
           </div>

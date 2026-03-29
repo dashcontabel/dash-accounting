@@ -10,8 +10,9 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "Nao autenticado." }, { status: 401 });
   }
 
-  const companyId = request.nextUrl.searchParams.get("companyId");
-  if (!companyId) {
+  // Support multiple companyIds: ?companyId=a&companyId=b  OR  ?companyId=a
+  const companyIds = request.nextUrl.searchParams.getAll("companyId").filter(Boolean);
+  if (companyIds.length === 0) {
     return NextResponse.json({ error: "companyId obrigatorio." }, { status: 400 });
   }
 
@@ -24,17 +25,34 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "Nao autenticado." }, { status: 401 });
   }
 
-  try {
-    await assertCompanyAccess(user, companyId);
-  } catch {
-    return NextResponse.json({ error: "Acesso negado." }, { status: 403 });
+  // Validate access to all requested companies
+  for (const companyId of companyIds) {
+    try {
+      await assertCompanyAccess(user, companyId);
+    } catch {
+      return NextResponse.json({ error: "Acesso negado." }, { status: 403 });
+    }
   }
 
-  const summaries = await prisma.dashboardMonthlySummary.findMany({
-    where: { companyId },
-    orderBy: { referenceMonth: "asc" },
-    select: { referenceMonth: true, dataJson: true },
-  });
+  // Fetch summaries for all companies in parallel
+  const results = await Promise.all(
+    companyIds.map(async (companyId) => {
+      const summaries = await prisma.dashboardMonthlySummary.findMany({
+        where: { companyId },
+        orderBy: { referenceMonth: "asc" },
+        select: { referenceMonth: true, dataJson: true },
+      });
+      const company = await prisma.company.findUnique({
+        where: { id: companyId },
+        select: { id: true, name: true },
+      });
+      return {
+        companyId,
+        companyName: company?.name ?? companyId,
+        summaries,
+      };
+    }),
+  );
 
-  return NextResponse.json({ summaries });
+  return NextResponse.json({ companies: results });
 }

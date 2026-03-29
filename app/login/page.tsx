@@ -1,47 +1,60 @@
 import { Suspense } from "react";
+import Image from "next/image";
 
 import LoginForm from "./login-form";
 
 export default function LoginPage() {
   return (
-    <main className="relative mx-auto flex min-h-screen w-full max-w-6xl items-center px-4 py-8 sm:px-6">
-      <div className="grid w-full items-stretch gap-6 lg:grid-cols-2">
-        <section className="hidden rounded-3xl border border-blue-100 bg-gradient-to-br from-[#0f4c81] via-[#1d5f9a] to-[#2b6fa7] p-8 text-white shadow-2xl lg:flex lg:flex-col lg:justify-between">
-          <p className="text-xs uppercase tracking-[0.2em] text-blue-100">
+    <main className="relative flex min-h-screen w-full items-stretch bg-linear-to-br from-[#071e3d] via-[#0f4c81] to-[#1a6eb5] dark:from-[#04111f] dark:via-[#0a3560] dark:to-[#0f4c81]">
+
+      {/* Left panel — desktop only */}
+      <section className="relative hidden flex-col justify-between p-12 text-white lg:flex lg:w-[52%] xl:p-16">
+
+        {/* Logo area */}
+        <div className="flex items-center gap-4">
+          <div className="relative h-12 w-12 overflow-hidden rounded-full ring-2 ring-white/20">
+            <Image src="/logo-barros-e-sa-icon.png" alt="Barros & Sá" fill className="object-contain" />
+          </div>
+          <div>
+            <p className="text-sm font-semibold leading-none text-white">Barros &amp; Sá</p>
+            <p className="mt-0.5 text-[11px] text-blue-200/70">Assessoria Empresarial e Condominial</p>
+          </div>
+        </div>
+
+        {/* Center text */}
+        <div>
+          <p className="mb-4 text-xs font-semibold uppercase tracking-[0.25em] text-blue-300/80">
             Plataforma Corporativa
           </p>
-          <h1 className="mt-4 text-4xl font-semibold leading-tight">
-            Gestao contabil com foco em governanca e escalabilidade
+          <h1 className="text-4xl font-bold leading-tight tracking-tight xl:text-5xl">
+            Gestão contábil com foco em governança e escalabilidade
           </h1>
-          <p className="mt-4 max-w-md text-sm text-blue-100">
-            Controle empresas, usuarios e contexto operacional de forma segura em um painel unificado.
+          <p className="mt-5 max-w-sm text-base leading-relaxed text-blue-100/70">
+            Controle empresas, usuários e contexto operacional de forma segura em um painel unificado.
           </p>
-          <div className="mt-8 grid grid-cols-2 gap-3 text-sm">
-            <div className="rounded-xl border border-white/30 bg-white/10 p-3">
-              <p className="text-blue-100">Visual</p>
-              <p className="mt-1 font-semibold">Dashboard intuitivo</p>
-            </div>
-            <div className="rounded-xl border border-white/30 bg-white/10 p-3">
-              <p className="text-blue-100">Analise</p>
-              <p className="mt-1 font-semibold">Graficos e indicadores</p>
-            </div>
-            <div className="rounded-xl border border-white/30 bg-white/10 p-3">
-              <p className="text-blue-100">Gestao</p>
-              <p className="mt-1 font-semibold">Tabelas operacionais</p>
-            </div>
-            <div className="rounded-xl border border-white/30 bg-white/10 p-3">
-              <p className="text-blue-100">Produtividade</p>
-              <p className="mt-1 font-semibold">Filtros inteligentes</p>
-            </div>
-          </div>
-        </section>
 
-        <section className="mx-auto flex w-full max-w-md items-center">
-          <Suspense fallback={<div className="text-sm text-zinc-600">Carregando...</div>}>
-            <LoginForm />
-          </Suspense>
-        </section>
-      </div>
+          {/* Feature pills */}
+          <div className="mt-8 flex flex-wrap gap-2">
+            {["Dashboard intuitivo", "Gráficos e indicadores", "Tabelas operacionais", "Filtros inteligentes", "Multi-empresa"].map((f) => (
+              <span key={f} className="rounded-full border border-white/20 bg-white/10 px-3.5 py-1 text-xs font-medium text-white/80 backdrop-blur-sm">
+                {f}
+              </span>
+            ))}
+          </div>
+        </div>
+
+        {/* Bottom watermark */}
+        <p className="text-xs text-blue-200/40">
+          &copy; {new Date().getFullYear()} Dash Contábil · Todos os direitos reservados
+        </p>
+      </section>
+
+      {/* Right panel — form */}
+      <section className="flex flex-1 items-center justify-center p-6 sm:p-10 lg:bg-white/4 lg:backdrop-blur-sm">
+        <Suspense fallback={<div className="text-sm text-blue-200">Carregando...</div>}>
+          <LoginForm />
+        </Suspense>
+      </section>
     </main>
   );
 }

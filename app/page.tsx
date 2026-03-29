@@ -570,92 +570,8 @@ export default function Home() {
             <KpiCard label="Total de Despesas" value={get(d, "DESPESAS_TOTAL")} color="red" icon={Icons.tax} />
           </div>
 
-          {/* ══ RECEITAS GROUP ══ */}
-          <div className="mt-5 rounded-2xl border border-emerald-100 bg-emerald-50/30 p-5 dark:border-emerald-900/30 dark:bg-emerald-950/10 sm:p-6">
-            <div className="mb-4 flex items-center gap-2">
-              <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-emerald-100 text-emerald-600 dark:bg-emerald-900/50 dark:text-emerald-400">
-                {Icons.trending}
-              </span>
-              <h2 className="text-sm font-bold text-emerald-800 dark:text-emerald-300">Receitas</h2>
-              <div className="ml-2 h-px flex-1 bg-emerald-200/70 dark:bg-emerald-900/40" />
-              <span className="text-xs font-semibold text-emerald-700 dark:text-emerald-400">
-                {formatCurrency(get(d, "RECEITAS_TOTAL"))}
-              </span>
-            </div>
-
-            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-              <KpiCard label="Faturamento" value={get(d, "FATURAMENTO")} color="green"
-                sub="NFs emitidas" icon={Icons.invoice} />
-              <KpiCard label="NFs Recebidas" value={get(d, "NFS_RECEBIDAS")} color="teal"
-                sub="Pagamentos recebidos" icon={Icons.invoice} />
-              <KpiCard label="Rendimento Bruto" value={get(d, "RENDIMENTO_BRUTO")} color="blue"
-                sub="Aplicações financeiras" icon={Icons.chart} />
-              <KpiCard label="Aluguel" value={get(d, "ALUGUEL")} color="teal"
-                icon={Icons.building} />
-            </div>
-
-            {(get(d, "LRA2_INVEST") + get(d, "LRA3_INVEST") + get(d, "B_VISTA_INVEST") + get(d, "TRAPICHE_INVEST")) > 0 ? (
-              <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-                <KpiCard label="LRA2 (Invest.)" value={get(d, "LRA2_INVEST")} color="blue" />
-                <KpiCard label="LRA3 (Invest.)" value={get(d, "LRA3_INVEST")} color="blue" />
-                <KpiCard label="B. Vista (Invest.)" value={get(d, "B_VISTA_INVEST")} color="blue" />
-                <KpiCard label="Trapiche (Invest.)" value={get(d, "TRAPICHE_INVEST")} color="blue" />
-              </div>
-            ) : null}
-
-            {/* NFs comparison */}
-            <div className="mt-4 grid gap-3 sm:grid-cols-3">
-              {[
-                { label: "NFs Emitidas", value: get(d, "FATURAMENTO"), color: "text-emerald-700 dark:text-emerald-400" },
-                { label: "NFs Recebidas", value: get(d, "NFS_RECEBIDAS"), color: "text-teal-700 dark:text-teal-400" },
-                {
-                  label: "Diferença",
-                  value: get(d, "FATURAMENTO") - get(d, "NFS_RECEBIDAS"),
-                  color: get(d, "FATURAMENTO") - get(d, "NFS_RECEBIDAS") >= 0 ? "text-amber-600 dark:text-amber-400" : "text-red-600 dark:text-red-400",
-                },
-              ].map(({ label, value, color }) => (
-                <div key={label} className="flex items-center rounded-xl border border-emerald-100 bg-white/80 px-4 py-3 dark:border-emerald-900/30 dark:bg-zinc-800/50">
-                  <div>
-                    <p className="text-xs text-zinc-400 dark:text-zinc-500">{label}</p>
-                    <p className={`mt-0.5 text-base font-bold ${color}`}>{formatCurrency(value)}</p>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          {/* ══ DESPESAS GROUP ══ */}
-          <div className="mt-4 rounded-2xl border border-red-100 bg-red-50/20 p-5 dark:border-red-900/30 dark:bg-red-950/10 sm:p-6">
-            <div className="mb-4 flex items-center gap-2">
-              <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-red-100 text-red-600 dark:bg-red-900/50 dark:text-red-400">
-                {Icons.tax}
-              </span>
-              <h2 className="text-sm font-bold text-red-800 dark:text-red-300">Despesas</h2>
-              <div className="ml-2 h-px flex-1 bg-red-200/70 dark:bg-red-900/40" />
-              <span className="text-xs font-semibold text-red-700 dark:text-red-400">
-                {formatCurrency(get(d, "DESPESAS_TOTAL"))}
-              </span>
-            </div>
-
-            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-              <KpiCard label="Impostos" value={get(d, "IMPOSTOS")} color="red" icon={Icons.tax} />
-              <KpiCard label="IOF / IRRF" value={get(d, "IOF_IRRF")} color="red" icon={Icons.dollar} />
-              <KpiCard label="Demais Despesas" value={get(d, "DEMAIS_DESPESAS")} color="amber" icon={Icons.chart} />
-              <KpiCard label="Condomínio" value={get(d, "CONDOMINIO")} color="amber" icon={Icons.building} />
-            </div>
-
-            {(get(d, "LRA2_DESP") + get(d, "LRA3_DESP") + get(d, "B_VISTA_DESP") + get(d, "TRAPICHE_DESP")) > 0 ? (
-              <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-                <KpiCard label="LRA2 (Desp.)" value={get(d, "LRA2_DESP")} color="red" />
-                <KpiCard label="LRA3 (Desp.)" value={get(d, "LRA3_DESP")} color="red" />
-                <KpiCard label="B. Vista (Desp.)" value={get(d, "B_VISTA_DESP")} color="red" />
-                <KpiCard label="Trapiche (Desp.)" value={get(d, "TRAPICHE_DESP")} color="red" />
-              </div>
-            ) : null}
-          </div>
-
           {/* ══ ANÁLISE ANUAL GROUP ══ */}
-          <div className="mt-4 rounded-2xl border border-zinc-200/80 bg-zinc-50/30 p-5 dark:border-zinc-700/40 dark:bg-zinc-800/20 sm:p-6">
+          <div className="mt-5 rounded-2xl border border-zinc-200/80 bg-zinc-50/30 p-5 dark:border-zinc-700/40 dark:bg-zinc-800/20 sm:p-6">
             <div className="mb-4 flex items-center gap-2">
               <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-blue-100 text-blue-600 dark:bg-blue-900/50 dark:text-blue-400">
                 {Icons.chart}
@@ -732,6 +648,95 @@ export default function Home() {
                 </ResponsiveContainer>
               </div>
             )}
+          </div>
+
+          {/* ══ RECEITAS + DESPESAS ══ */}
+          <div className="mt-5 grid gap-4 lg:grid-cols-2">
+
+            {/* RECEITAS GROUP */}
+            <div className="rounded-2xl border border-emerald-100 bg-emerald-50/30 p-5 dark:border-emerald-900/30 dark:bg-emerald-950/10 sm:p-6">
+              <div className="mb-4 flex items-center gap-2">
+                <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-emerald-100 text-emerald-600 dark:bg-emerald-900/50 dark:text-emerald-400">
+                  {Icons.trending}
+                </span>
+                <h2 className="text-sm font-bold text-emerald-800 dark:text-emerald-300">Receitas</h2>
+                <div className="ml-2 h-px flex-1 bg-emerald-200/70 dark:bg-emerald-900/40" />
+                <span className="text-xs font-semibold text-emerald-700 dark:text-emerald-400">
+                  {formatCurrency(get(d, "RECEITAS_TOTAL"))}
+                </span>
+              </div>
+
+              <div className="grid gap-4 sm:grid-cols-2">
+                <KpiCard label="Faturamento" value={get(d, "FATURAMENTO")} color="green"
+                  sub="NFs emitidas" icon={Icons.invoice} />
+                <KpiCard label="NFs Recebidas" value={get(d, "NFS_RECEBIDAS")} color="teal"
+                  sub="Pagamentos recebidos" icon={Icons.invoice} />
+                <KpiCard label="Rendimento Bruto" value={get(d, "RENDIMENTO_BRUTO")} color="blue"
+                  sub="Aplicações financeiras" icon={Icons.chart} />
+                <KpiCard label="Aluguel" value={get(d, "ALUGUEL")} color="teal"
+                  icon={Icons.building} />
+              </div>
+
+              {(get(d, "LRA2_INVEST") + get(d, "LRA3_INVEST") + get(d, "B_VISTA_INVEST") + get(d, "TRAPICHE_INVEST")) > 0 ? (
+                <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                  <KpiCard label="LRA2 (Invest.)" value={get(d, "LRA2_INVEST")} color="blue" />
+                  <KpiCard label="LRA3 (Invest.)" value={get(d, "LRA3_INVEST")} color="blue" />
+                  <KpiCard label="B. Vista (Invest.)" value={get(d, "B_VISTA_INVEST")} color="blue" />
+                  <KpiCard label="Trapiche (Invest.)" value={get(d, "TRAPICHE_INVEST")} color="blue" />
+                </div>
+              ) : null}
+
+              {/* NFs comparison */}
+              <div className="mt-4 grid gap-3 sm:grid-cols-3">
+                {[
+                  { label: "NFs Emitidas", value: get(d, "FATURAMENTO"), color: "text-emerald-700 dark:text-emerald-400" },
+                  { label: "NFs Recebidas", value: get(d, "NFS_RECEBIDAS"), color: "text-teal-700 dark:text-teal-400" },
+                  {
+                    label: "Diferença",
+                    value: get(d, "FATURAMENTO") - get(d, "NFS_RECEBIDAS"),
+                    color: get(d, "FATURAMENTO") - get(d, "NFS_RECEBIDAS") >= 0 ? "text-amber-600 dark:text-amber-400" : "text-red-600 dark:text-red-400",
+                  },
+                ].map(({ label, value, color }) => (
+                  <div key={label} className="flex items-center rounded-xl border border-emerald-100 bg-white/80 px-4 py-3 dark:border-emerald-900/30 dark:bg-zinc-800/50">
+                    <div>
+                      <p className="text-xs text-zinc-400 dark:text-zinc-500">{label}</p>
+                      <p className={`mt-0.5 text-base font-bold ${color}`}>{formatCurrency(value)}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* DESPESAS GROUP */}
+            <div className="rounded-2xl border border-red-100 bg-red-50/20 p-5 dark:border-red-900/30 dark:bg-red-950/10 sm:p-6">
+              <div className="mb-4 flex items-center gap-2">
+                <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-red-100 text-red-600 dark:bg-red-900/50 dark:text-red-400">
+                  {Icons.tax}
+                </span>
+                <h2 className="text-sm font-bold text-red-800 dark:text-red-300">Despesas</h2>
+                <div className="ml-2 h-px flex-1 bg-red-200/70 dark:bg-red-900/40" />
+                <span className="text-xs font-semibold text-red-700 dark:text-red-400">
+                  {formatCurrency(get(d, "DESPESAS_TOTAL"))}
+                </span>
+              </div>
+
+              <div className="grid gap-4 sm:grid-cols-2">
+                <KpiCard label="Impostos" value={get(d, "IMPOSTOS")} color="red" icon={Icons.tax} />
+                <KpiCard label="IOF / IRRF" value={get(d, "IOF_IRRF")} color="red" icon={Icons.dollar} />
+                <KpiCard label="Demais Despesas" value={get(d, "DEMAIS_DESPESAS")} color="amber" icon={Icons.chart} />
+                <KpiCard label="Condomínio" value={get(d, "CONDOMINIO")} color="amber" icon={Icons.building} />
+              </div>
+
+              {(get(d, "LRA2_DESP") + get(d, "LRA3_DESP") + get(d, "B_VISTA_DESP") + get(d, "TRAPICHE_DESP")) > 0 ? (
+                <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                  <KpiCard label="LRA2 (Desp.)" value={get(d, "LRA2_DESP")} color="red" />
+                  <KpiCard label="LRA3 (Desp.)" value={get(d, "LRA3_DESP")} color="red" />
+                  <KpiCard label="B. Vista (Desp.)" value={get(d, "B_VISTA_DESP")} color="red" />
+                  <KpiCard label="Trapiche (Desp.)" value={get(d, "TRAPICHE_DESP")} color="red" />
+                </div>
+              ) : null}
+            </div>
+
           </div>
 
           {/* ══ BOTTOM ROW ══ */}

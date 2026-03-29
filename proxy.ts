@@ -26,6 +26,11 @@ async function getSession(request: NextRequest): Promise<SessionPayload | null> 
 export default async function proxy(request: NextRequest) {
   const { pathname, search } = request.nextUrl;
 
+  // Health check — confirms proxy is running
+  if (pathname === "/_proxy-check") {
+    return NextResponse.json({ ok: true, ts: Date.now(), region: process.env.VERCEL_REGION ?? "unknown" });
+  }
+
   let session: SessionPayload | null = null;
   let sessionError: string | null = null;
   try {

@@ -141,7 +141,7 @@ export default function AppShell({ role, email, children, onLogout }: AppShellPr
     <>
       {/* Logo + Brand */}
       <div className="px-2">
-        <CompanyLogo compact className="mx-auto mb-4 w-full max-w-[160px]" />
+        <CompanyLogo compact onDark className="mx-auto mb-4 w-full max-w-[160px]" />
       </div>
 
       {/* User badge */}

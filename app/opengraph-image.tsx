@@ -5,7 +5,10 @@ export const alt = "Dash Contábil — Plataforma de gestão contábil corporati
 export const size = { width: 1200, height: 630 };
 export const contentType = "image/png";
 
-export default function OgImage() {
+export default async function OgImage() {
+  const baseUrl = process.env.NEXT_PUBLIC_SITE_URL
+    ?? (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "http://localhost:3000");
+
   return new ImageResponse(
     (
       <div
@@ -20,35 +23,39 @@ export default function OgImage() {
           fontFamily: "system-ui, sans-serif",
         }}
       >
-        {/* Card */}
         <div
           style={{
             display: "flex",
             flexDirection: "column",
             alignItems: "center",
-            gap: "32px",
+            gap: "36px",
           }}
         >
-          {/* Icon */}
-          <div
-            style={{
-              display: "flex",
-              alignItems: "flex-end",
-              gap: "12px",
-              paddingBottom: "12px",
-              borderBottom: "3px solid rgba(255,255,255,0.25)",
-            }}
-          >
-            {/* Bar chart icon */}
-            <div style={{ display: "flex", alignItems: "flex-end", gap: "8px" }}>
-              <div style={{ width: 28, height: 52, background: "rgba(255,255,255,0.55)", borderRadius: 6 }} />
-              <div style={{ width: 28, height: 84, background: "white", borderRadius: 6 }} />
-              <div style={{ width: 28, height: 112, background: "rgba(255,255,255,0.8)", borderRadius: 6 }} />
+          {/* B&S icon */}
+          <div style={{ display: "flex", alignItems: "center", gap: "28px" }}>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={`${baseUrl}/logo-barros-e-sa-icon.png`}
+              width={140}
+              height={140}
+              alt=""
+              style={{ borderRadius: "50%" }}
+            />
+            {/* Divider */}
+            <div style={{ width: 2, height: 100, background: "rgba(255,255,255,0.25)", borderRadius: 2 }} />
+            {/* Name */}
+            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+              <span style={{ fontSize: 32, fontWeight: 300, color: "rgba(255,255,255,0.7)", letterSpacing: 1 }}>
+                Barros &amp; Sá
+              </span>
+              <span style={{ fontSize: 16, color: "rgba(255,255,255,0.45)", letterSpacing: 1 }}>
+                Assessoria Empresarial e Condominial
+              </span>
             </div>
           </div>
 
           {/* Logotype */}
-          <div style={{ display: "flex", alignItems: "baseline", gap: "0px" }}>
+          <div style={{ display: "flex", alignItems: "baseline" }}>
             <span style={{ fontSize: 88, fontWeight: 800, color: "white", letterSpacing: "-2px" }}>
               Dash
             </span>
@@ -58,15 +65,7 @@ export default function OgImage() {
           </div>
 
           {/* Tagline */}
-          <p
-            style={{
-              fontSize: 28,
-              color: "rgba(255,255,255,0.65)",
-              fontWeight: 400,
-              margin: 0,
-              letterSpacing: "0.5px",
-            }}
-          >
+          <p style={{ fontSize: 26, color: "rgba(255,255,255,0.6)", fontWeight: 400, margin: 0 }}>
             Plataforma de gestão contábil corporativa
           </p>
         </div>

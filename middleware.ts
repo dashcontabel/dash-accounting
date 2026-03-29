@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 
-import { getUserFromRequest } from "@/lib/auth";
+import { getUserFromRequest } from "@/lib/auth/request";
 
 export async function middleware(request: NextRequest) {
   const { pathname, search } = request.nextUrl;

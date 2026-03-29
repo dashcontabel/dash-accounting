@@ -25,26 +25,42 @@ async function getSession(request: NextRequest): Promise<SessionPayload | null> 
 
 export default async function proxy(request: NextRequest) {
   const { pathname, search } = request.nextUrl;
-  const session = await getSession(request);
+
+  let session: SessionPayload | null = null;
+  let sessionError: string | null = null;
+  try {
+    session = await getSession(request);
+  } catch (err) {
+    sessionError = err instanceof Error ? err.message : String(err);
+  }
+
   const isAuthenticated = Boolean(session?.sub);
   const isProtectedPath = pathname === "/" || pathname.startsWith("/app");
   const isAdminPage = pathname.startsWith("/app/admin");
+
+  console.log(
+    `[proxy] ${request.method} ${pathname} | authenticated=${isAuthenticated} role=${session?.role ?? "none"} jwtSecret=${Boolean(process.env.JWT_SECRET)} hasCookie=${Boolean(request.cookies.get(AUTH_COOKIE_NAME)?.value)}${sessionError ? ` sessionError=${sessionError}` : ""}`
+  );
 
   if (isProtectedPath && !isAuthenticated) {
     const loginUrl = new URL("/login", request.url);
     const nextPath = `${pathname}${search}`;
     loginUrl.searchParams.set("next", nextPath);
+    console.log(`[proxy] -> redirect to /login (unauthenticated)`);
     return NextResponse.redirect(loginUrl);
   }
 
   if (pathname === "/login" && isAuthenticated) {
+    console.log(`[proxy] -> redirect to / (already authenticated)`);
     return NextResponse.redirect(new URL("/", request.url));
   }
 
   if (isAdminPage && session?.role !== "ADMIN") {
+    console.log(`[proxy] -> redirect to / (not admin)`);
     return NextResponse.redirect(new URL("/", request.url));
   }
 
+  console.log(`[proxy] -> next()`);
   return NextResponse.next();
 }
 

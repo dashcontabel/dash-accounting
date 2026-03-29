@@ -1,5 +1,6 @@
-import { Role } from "@prisma/client";
 import { JWTPayload, SignJWT, jwtVerify } from "jose";
+
+type Role = "ADMIN" | "CLIENT";
 
 export const AUTH_COOKIE_NAME = "dash_contabil_session";
 const TOKEN_EXPIRATION = "7d";

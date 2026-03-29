@@ -106,7 +106,7 @@ function KpiCard({
       <div className="flex items-start justify-between gap-2">
         <p className="text-xs font-semibold uppercase tracking-wider text-zinc-500 dark:text-zinc-400">{label}</p>
         {icon && (
-          <span className={`flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-xl ${c.icon}`}>
+          <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-xl ${c.icon}`}>
             {icon}
           </span>
         )}
@@ -293,11 +293,16 @@ export default function Home() {
     [granularity, aggregatedPeriods],
   );
 
-  // Reset year/month when summaries reload
+  // Reset year/month when summaries reload — prefer current month, fall back to last available
   useEffect(() => {
     if (mergedSummaries.length > 0) {
-      const last = mergedSummaries[mergedSummaries.length - 1]!;
-      const [y, m] = last.referenceMonth.split("-");
+      const now = new Date();
+      const currentYM = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+      const hasCurrent = mergedSummaries.some((s) => s.referenceMonth === currentYM);
+      const target = hasCurrent
+        ? currentYM
+        : mergedSummaries[mergedSummaries.length - 1]!.referenceMonth;
+      const [y, m] = target.split("-");
       setSelectedYear(y ?? "");
       setSelectedMonth(m ?? "");
     } else {
@@ -611,7 +616,7 @@ export default function Home() {
           {isStale ? (
             <div className="mt-6 flex flex-col gap-3 rounded-2xl border border-amber-200 bg-amber-50 p-5">
               <div className="flex items-start gap-3">
-                <div className="mt-0.5 flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-xl bg-amber-100 text-amber-600">
+                <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-amber-100 text-amber-600">
                   <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
                   </svg>

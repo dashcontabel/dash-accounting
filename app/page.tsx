@@ -192,6 +192,7 @@ export default function Home() {
   const [recalculating, setRecalculating] = useState(false);
   const [recalcMsg, setRecalcMsg] = useState<string | null>(null);
   const [seeding, setSeeding] = useState(false);
+  const [filtersOpen, setFiltersOpen] = useState(true);
 
   // ── Auth & company list ──────────────────────────────────────────────────
 
@@ -529,58 +530,97 @@ export default function Home() {
     <AppShell role={userRole} email={userEmail} onLogout={handleLogout}>
 
       {/* ── Filter bar ── */}
-      <div className="mb-6 rounded-2xl border border-zinc-100 bg-zinc-50/80 p-4 shadow-sm dark:border-zinc-700/50 dark:bg-zinc-800/50 sm:p-5">
-        <div className="grid gap-5 sm:grid-cols-2">
-
-          {/* Empresas */}
-          <div className="flex min-w-0 flex-col gap-1.5">
-            <label className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-widest text-zinc-400 dark:text-zinc-500">
-              <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5" />
-              </svg>
-              Empresas
-            </label>
-            <MultiCompanySelect
-              companies={allowedCompanies}
-              selected={selectedCompanyIds}
-              onChange={(ids) => void handleSelectCompanies(ids)}
-              disabled={isSavingCompany}
-            />
-          </div>
-
-          {/* Período */}
-          <div className="flex min-w-0 flex-col gap-1.5">
-            <label className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-widest text-zinc-400 dark:text-zinc-500">
-              <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-              </svg>
-              Período
-            </label>
-            <PeriodFilter
-              granularity={granularity}
-              year={selectedYear}
-              month={selectedMonth}
-              years={years}
-              monthsForYear={monthsForYear}
-              onGranularityChange={setGranularity}
-              onYearChange={(y) => {
-                setSelectedYear(y);
-                const first = mergedSummaries.find((s) => s.referenceMonth.startsWith(y));
-                if (first) setSelectedMonth(first.referenceMonth.slice(5, 7));
-              }}
-              onMonthChange={setSelectedMonth}
-            />
-          </div>
-        </div>
-
-        {contextMessage ? (
-          <p className="mt-3 flex items-center gap-1.5 text-xs text-zinc-500 dark:text-zinc-400">
-            <svg className="h-3.5 w-3.5 text-emerald-500" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+      <div className="mb-6 rounded-2xl border border-zinc-100 bg-zinc-50/80 shadow-sm dark:border-zinc-700/50 dark:bg-zinc-800/50">
+        {/* Header / toggle */}
+        <button
+          type="button"
+          onClick={() => setFiltersOpen((o) => !o)}
+          className="flex w-full items-center justify-between gap-3 px-4 py-3 sm:px-5"
+        >
+          <span className="flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-zinc-500 dark:text-zinc-400">
+            <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2a1 1 0 01-.293.707L13 13.414V19a1 1 0 01-.553.894l-4 2A1 1 0 017 21v-7.586L3.293 6.707A1 1 0 013 6V4z" />
             </svg>
-            {contextMessage}
-          </p>
-        ) : null}
+            Filtros
+            {!filtersOpen && (selectedCompanyIds.length > 0 || selectedYear) && (
+              <span className="ml-1 rounded-full bg-blue-100 px-2 py-0.5 text-[10px] font-semibold text-blue-700 dark:bg-blue-900/40 dark:text-blue-300">
+                {selectedCompanyIds.length > 0 ? (
+                  selectedCompanyIds.length === 1
+                    ? (allowedCompanies.find((c) => c.id === selectedCompanyIds[0])?.name ?? "1 empresa")
+                    : `${selectedCompanyIds.length} empresas`
+                ) : ""}
+                {selectedCompanyIds.length > 0 && selectedYear ? " · " : ""}
+                {selectedYear ? `${MONTH_LABELS[selectedMonth] ?? selectedMonth}/${selectedYear}` : ""}
+              </span>
+            )}
+          </span>
+          <svg
+            className={`h-4 w-4 shrink-0 text-zinc-400 transition-transform duration-200 dark:text-zinc-500 ${filtersOpen ? "rotate-180" : "rotate-0"}`}
+            fill="none"
+            stroke="currentColor"
+            strokeWidth={2}
+            viewBox="0 0 24 24"
+          >
+            <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+          </svg>
+        </button>
+
+        {/* Collapsible body */}
+        {filtersOpen && (
+          <div className="border-t border-zinc-100 px-4 pb-4 pt-4 dark:border-zinc-700/50 sm:px-5 sm:pb-5">
+            <div className="grid gap-5 sm:grid-cols-2">
+
+              {/* Empresas */}
+              <div className="flex min-w-0 flex-col gap-1.5">
+                <label className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-widest text-zinc-400 dark:text-zinc-500">
+                  <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5" />
+                  </svg>
+                  Empresas
+                </label>
+                <MultiCompanySelect
+                  companies={allowedCompanies}
+                  selected={selectedCompanyIds}
+                  onChange={(ids) => void handleSelectCompanies(ids)}
+                  disabled={isSavingCompany}
+                />
+              </div>
+
+              {/* Período */}
+              <div className="flex min-w-0 flex-col gap-1.5">
+                <label className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-widest text-zinc-400 dark:text-zinc-500">
+                  <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                  </svg>
+                  Período
+                </label>
+                <PeriodFilter
+                  granularity={granularity}
+                  year={selectedYear}
+                  month={selectedMonth}
+                  years={years}
+                  monthsForYear={monthsForYear}
+                  onGranularityChange={setGranularity}
+                  onYearChange={(y) => {
+                    setSelectedYear(y);
+                    const first = mergedSummaries.find((s) => s.referenceMonth.startsWith(y));
+                    if (first) setSelectedMonth(first.referenceMonth.slice(5, 7));
+                  }}
+                  onMonthChange={setSelectedMonth}
+                />
+              </div>
+            </div>
+
+            {contextMessage ? (
+              <p className="mt-3 flex items-center gap-1.5 text-xs text-zinc-500 dark:text-zinc-400">
+                <svg className="h-3.5 w-3.5 text-emerald-500" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                </svg>
+                {contextMessage}
+              </p>
+            ) : null}
+          </div>
+        )}
       </div>
 
       {/* ── Empty / Loading states ── */}
@@ -711,7 +751,7 @@ export default function Home() {
           </div>
 
           {/* ══ ANÁLISE ANUAL GROUP ══ */}
-          <div className="mt-5 rounded-2xl border border-zinc-200/80 bg-zinc-50/30 p-5 dark:border-zinc-700/40 dark:bg-zinc-800/20 sm:p-6">
+          <div className="mt-5 rounded-2xl border border-zinc-300 bg-zinc-500/10 p-5 dark:border-zinc-700/40 dark:bg-zinc-800/20 sm:p-6">
             <div className="mb-4 flex items-center gap-2">
               <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-blue-100 text-blue-600 dark:bg-blue-900/50 dark:text-blue-400">
                 {Icons.chart}
@@ -859,7 +899,7 @@ export default function Home() {
           <div className="mt-5 grid gap-4 lg:grid-cols-2">
 
             {/* RECEITAS GROUP */}
-            <div className="rounded-2xl border border-emerald-100 bg-emerald-50/30 p-5 dark:border-emerald-900/30 dark:bg-emerald-950/10 sm:p-6">
+            <div className="rounded-2xl border border-emerald-200 bg-emerald-500/10 p-5 dark:border-emerald-900/30 dark:bg-emerald-950/10 sm:p-6">
               <div className="mb-4 flex items-center gap-2">
                 <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-emerald-100 text-emerald-600 dark:bg-emerald-900/50 dark:text-emerald-400">
                   {Icons.trending}
@@ -913,7 +953,7 @@ export default function Home() {
             </div>
 
             {/* DESPESAS GROUP */}
-            <div className="rounded-2xl border border-red-100 bg-red-50/20 p-5 dark:border-red-900/30 dark:bg-red-950/10 sm:p-6">
+            <div className="rounded-2xl border border-red-200 bg-red-500/10 p-5 dark:border-red-900/30 dark:bg-red-950/10 sm:p-6">
               <div className="mb-4 flex items-center gap-2">
                 <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-red-100 text-red-600 dark:bg-red-900/50 dark:text-red-400">
                   {Icons.tax}
@@ -947,7 +987,7 @@ export default function Home() {
           {/* ══ BOTTOM ROW ══ */}
           <div className="mt-4 grid gap-4 lg:grid-cols-3">
             {/* Saldo Bancário */}
-            <div className="rounded-2xl border border-purple-100 bg-purple-50/20 p-5 dark:border-purple-900/30 dark:bg-purple-950/10">
+            <div className="rounded-2xl border border-purple-200 bg-purple-500/10 p-5 dark:border-purple-900/30 dark:bg-purple-950/10">
               <div className="mb-3 flex items-center gap-2">
                 <span className="flex h-6 w-6 items-center justify-center rounded-lg bg-purple-100 text-purple-600 dark:bg-purple-900/50 dark:text-purple-400">
                   {Icons.bank}
@@ -959,7 +999,7 @@ export default function Home() {
             </div>
 
             {/* Rendimento Passivo */}
-            <div className="rounded-2xl border border-teal-100 bg-teal-50/20 p-5 dark:border-teal-900/30 dark:bg-teal-950/10">
+            <div className="rounded-2xl border border-teal-200 bg-teal-500/10 p-5 dark:border-teal-900/30 dark:bg-teal-950/10">
               <div className="mb-3 flex items-center gap-2">
                 <span className="flex h-6 w-6 items-center justify-center rounded-lg bg-teal-100 text-teal-600 dark:bg-teal-900/50 dark:text-teal-400">
                   {Icons.trending}
@@ -975,7 +1015,7 @@ export default function Home() {
             </div>
 
             {/* Distribuição de Lucros */}
-            <div className="rounded-2xl border border-amber-100 bg-amber-50/20 p-5 dark:border-amber-900/30 dark:bg-amber-950/10">
+            <div className="rounded-2xl border border-amber-200 bg-amber-500/10 p-5 dark:border-amber-900/30 dark:bg-amber-950/10">
               <div className="mb-3 flex items-center gap-2">
                 <span className="flex h-6 w-6 items-center justify-center rounded-lg bg-amber-100 text-amber-600 dark:bg-amber-900/50 dark:text-amber-400">
                   {Icons.dollar}

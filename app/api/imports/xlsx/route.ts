@@ -126,6 +126,20 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // Validate that the period in the file matches the referenceMonth selected by the user
+    if (parsedForm.data.referenceMonth && parsedWorkbook.metadata?.referenceMonth) {
+      if (parsedWorkbook.metadata.referenceMonth !== parsedForm.data.referenceMonth) {
+        const [fileYear, fileMon] = parsedWorkbook.metadata.referenceMonth.split("-");
+        const [selYear, selMon] = parsedForm.data.referenceMonth.split("-");
+        return NextResponse.json(
+          {
+            error: `O periodo do arquivo (${fileMon}/${fileYear}) nao corresponde ao mes/ano selecionado para importacao (${selMon}/${selYear}). Verifique o arquivo ou corrija o periodo informado.`,
+          },
+          { status: 422 },
+        );
+      }
+    }
+
     const existingBatch = await prisma.importBatch.findUnique({
       where: {
         companyId_referenceMonth_checksum: {

@@ -2,6 +2,8 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import { toast } from "sonner";
+import { confirmToast } from "@/app/components/confirm-toast";
 
 import AppShell from "@/app/components/app-shell";
 
@@ -53,14 +55,12 @@ export default function AdminMappingsPage() {
   const [mappings, setMappings] = useState<MappingRow[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [seeding, setSeeding] = useState(false);
-  const [message, setMessage] = useState<{ text: string; ok: boolean } | null>(null);
 
   // Modal state
   const [isOpen, setIsOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState<FormState>(INITIAL_FORM);
   const [saving, setSaving] = useState(false);
-  const [modalMessage, setModalMessage] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     const [meRes, mappingsRes] = await Promise.all([
@@ -92,18 +92,18 @@ export default function AdminMappingsPage() {
 
   async function handleSeed() {
     setSeeding(true);
-    setMessage(null);
+    const seedToastId = toast.loading("Inicializando mapeamentos padrão...");
     try {
       const res = await fetch("/api/admin/mappings/seed", { method: "POST" });
       const data = (await res.json()) as { message?: string; count?: number; error?: string };
       if (res.ok) {
-        setMessage({ text: `${data.message ?? "OK"} (${data.count ?? 0} regras criadas)`, ok: true });
+        toast.success(`${data.message ?? "OK"} (${data.count ?? 0} regras criadas)`, { id: seedToastId });
         await load();
       } else {
-        setMessage({ text: data.error ?? "Erro ao inicializar.", ok: false });
+        toast.error(data.error ?? "Erro ao inicializar.", { id: seedToastId });
       }
     } catch {
-      setMessage({ text: "Erro de rede.", ok: false });
+      toast.error("Erro de rede.", { id: seedToastId });
     } finally {
       setSeeding(false);
     }
@@ -112,7 +112,6 @@ export default function AdminMappingsPage() {
   function openCreate() {
     setEditingId(null);
     setForm(INITIAL_FORM);
-    setModalMessage(null);
     setIsOpen(true);
   }
 
@@ -127,13 +126,11 @@ export default function AdminMappingsPage() {
       isCalculated: m.isCalculated,
       formula: m.formula ?? "",
     });
-    setModalMessage(null);
     setIsOpen(true);
   }
 
   async function handleSave() {
     setSaving(true);
-    setModalMessage(null);
 
     const codes = form.codesRaw
       .split(",")
@@ -170,26 +167,28 @@ export default function AdminMappingsPage() {
       });
       const data = (await res.json()) as { error?: string };
       if (!res.ok) {
-        setModalMessage(data.error ?? "Falha ao salvar.");
+        toast.error(data.error ?? "Falha ao salvar.");
         return;
       }
+      toast.success(editingId ? "Mapeamento atualizado com sucesso." : "Mapeamento criado com sucesso.");
       setIsOpen(false);
       await load();
     } catch {
-      setModalMessage("Erro de rede.");
+      toast.error("Erro de rede.");
     } finally {
       setSaving(false);
     }
   }
 
   async function handleDelete(id: string) {
-    if (!confirm("Remover este mapeamento? Imports futuros não calcularão mais este campo.")) return;
+    if (!await confirmToast("Remover este mapeamento? Imports futuros não calcularão mais este campo.")) return;
     const res = await fetch(`/api/admin/mappings/${id}`, { method: "DELETE" });
     if (!res.ok && res.status !== 204) {
       const data = (await res.json()) as { error?: string };
-      setMessage({ text: data.error ?? "Falha ao remover.", ok: false });
+      toast.error(data.error ?? "Falha ao remover.");
       return;
     }
+    toast.success("Mapeamento removido.");
     await load();
   }
 
@@ -224,12 +223,6 @@ export default function AdminMappingsPage() {
             </button>
           </div>
         </div>
-
-        {message ? (
-          <div className={`rounded-xl border p-4 text-sm ${message.ok ? "border-emerald-200 bg-emerald-50 text-emerald-800 dark:border-emerald-800/50 dark:bg-emerald-950/30 dark:text-emerald-300" : "border-red-200 bg-red-50 text-red-800 dark:border-red-800/50 dark:bg-red-950/30 dark:text-red-300"}`}>
-            {message.text}
-          </div>
-        ) : null}
 
         {/* Empty state */}
         {!isLoading && mappings.length === 0 ? (
@@ -468,11 +461,6 @@ export default function AdminMappingsPage() {
                 </>
               )}
 
-              {modalMessage && (
-                <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700 dark:border-red-800/50 dark:bg-red-950/20 dark:text-red-400">
-                  {modalMessage}
-                </p>
-              )}
             </div>
 
             <div className="mt-6 flex justify-end gap-3">

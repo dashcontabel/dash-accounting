@@ -2,6 +2,8 @@
 
 import { FormEvent, useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import { toast } from "sonner";
+import { confirmToast } from "@/app/components/confirm-toast";
 
 import AppShell from "@/app/components/app-shell";
 
@@ -54,7 +56,6 @@ export default function AdminCompaniesPage() {
   const [isOpen, setIsOpen] = useState(false);
   const [editing, setEditing] = useState<Company | null>(null);
   const [form, setForm] = useState<CompanyForm>(initialForm);
-  const [message, setMessage] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     const [meRes, companiesRes, groupsRes] = await Promise.all([
@@ -68,7 +69,7 @@ export default function AdminCompaniesPage() {
       return;
     }
     if (!companiesRes.ok || !groupsRes.ok) {
-      setMessage("Nao foi possivel carregar os dados.");
+      toast.error("Nao foi possivel carregar os dados.");
       return;
     }
 
@@ -117,7 +118,6 @@ export default function AdminCompaniesPage() {
 
   async function handleSave(event: FormEvent) {
     event.preventDefault();
-    setMessage(null);
 
     const url = editing ? `/api/admin/companies/${editing.id}` : "/api/admin/companies";
     const method = editing ? "PATCH" : "POST";
@@ -133,24 +133,26 @@ export default function AdminCompaniesPage() {
 
     if (!response.ok) {
       const data = (await response.json()) as { error?: string };
-      setMessage(data.error ?? "Falha ao salvar empresa.");
+      toast.error(data.error ?? "Falha ao salvar empresa.");
       return;
     }
 
+    toast.success(editing ? "Empresa atualizada com sucesso." : "Empresa criada com sucesso.");
     setIsOpen(false);
     await load();
   }
 
   async function handleDelete(companyId: string) {
-    if (!confirm("Deseja remover esta empresa?")) return;
+    if (!await confirmToast("Deseja remover esta empresa?")) return;
     const response = await fetch(`/api/admin/companies/${companyId}`, {
       method: "DELETE",
     });
     if (!response.ok) {
       const data = (await response.json()) as { error?: string };
-      setMessage(data.error ?? "Falha ao remover empresa.");
+      toast.error(data.error ?? "Falha ao remover empresa.");
       return;
     }
+    toast.success("Empresa removida.");
     await load();
   }
 
@@ -178,7 +180,6 @@ export default function AdminCompaniesPage() {
         </button>
       </div>
 
-      {message ? <p className="mt-4 text-sm text-red-600 dark:text-red-400">{message}</p> : null}
       {isLoading ? <p className="mt-6 text-sm text-[--text-muted]">Carregando...</p> : null}
 
       {!isLoading ? (

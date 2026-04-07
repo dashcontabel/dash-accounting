@@ -2,6 +2,8 @@
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import { toast } from "sonner";
+import { confirmToast } from "@/app/components/confirm-toast";
 
 import AppShell from "@/app/components/app-shell";
 
@@ -50,7 +52,7 @@ export default function ImportsPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [isUploading, setIsUploading] = useState(false);
   const [deletingBatchId, setDeletingBatchId] = useState<string | null>(null);
-  const [message, setMessage] = useState<string | null>(null);
+  const [fileInputKey, setFileInputKey] = useState(0);
 
   const canUpload = useMemo(
     () => Boolean(file && selectedCompanyId && referenceMonth && me?.role === "ADMIN"),
@@ -123,7 +125,7 @@ export default function ImportsPage() {
         }
       } catch (error) {
         if (!isMounted) return;
-        setMessage(error instanceof Error ? error.message : "Falha ao carregar pagina.");
+        toast.error(error instanceof Error ? error.message : "Falha ao carregar pagina.");
       } finally {
         if (isMounted) setIsLoading(false);
       }
@@ -138,8 +140,8 @@ export default function ImportsPage() {
     event.preventDefault();
     if (!canUpload || !file) return;
 
-    setMessage(null);
     setIsUploading(true);
+    const uploadToastId = toast.loading("Processando importação...");
 
     try {
       const formData = new FormData();
@@ -160,20 +162,26 @@ export default function ImportsPage() {
       };
 
       if (!response.ok) {
-        setMessage(data.error ?? "Falha no upload.");
+        toast.error(data.error ?? "Falha no upload.", { id: uploadToastId });
         return;
       }
 
-      setMessage(data.idempotent ? "Arquivo ja importado para este periodo." : "Importacao concluida.");
+      if (data.idempotent) {
+        toast.warning("Arquivo já importado para este período.", { id: uploadToastId });
+      } else {
+        toast.success("Importação concluída com sucesso!", { id: uploadToastId });
+      }
       const newBatchId = data.batchId ?? null;
       if (newBatchId) {
         setBatchSummaries((prev) => ({ ...prev, [newBatchId]: data.summary ?? null }));
         setExpandedBatchId(newBatchId);
       }
+      // Reset file state and input element so the button unlocks for the next import
       setFile(null);
+      setFileInputKey((k) => k + 1);
       await loadBatches(selectedCompanyId);
     } catch {
-      setMessage("Falha no upload.");
+      toast.error("Falha no upload. Verifique sua conexão e tente novamente.", { id: uploadToastId });
     } finally {
       setIsUploading(false);
     }
@@ -182,13 +190,12 @@ export default function ImportsPage() {
   async function handleCompanyChange(companyId: string) {
     setSelectedCompanyId(companyId);
     setExpandedBatchId(null);
-    setMessage(null);
 
     if (companyId) {
       try {
         await loadBatches(companyId);
       } catch (error) {
-        setMessage(error instanceof Error ? error.message : "Falha ao carregar imports.");
+        toast.error(error instanceof Error ? error.message : "Falha ao carregar imports.");
       }
     } else {
       setBatches([]);
@@ -209,22 +216,23 @@ export default function ImportsPage() {
   }
 
   async function handleDeleteBatch(batchId: string, label: string) {
-    if (!confirm(`Excluir o import "${label}"?\nOs dados do dashboard deste mês também serão removidos.`)) return;
+    if (!await confirmToast(`Excluir o import "${label}"? Os dados do dashboard deste mês também serão removidos.`)) return;
 
     setDeletingBatchId(batchId);
-    setMessage(null);
+    const deleteToastId = toast.loading("Excluindo import...");
     try {
       const response = await fetch(`/api/imports/${batchId}`, { method: "DELETE" });
       if (!response.ok) {
         const data = (await response.json()) as { error?: string };
-        setMessage(data.error ?? "Falha ao excluir import.");
+        toast.error(data.error ?? "Falha ao excluir import.", { id: deleteToastId });
         return;
       }
+      toast.success("Import excluído com sucesso.", { id: deleteToastId });
       if (expandedBatchId === batchId) setExpandedBatchId(null);
       setBatchSummaries((prev) => { const next = { ...prev }; delete next[batchId]; return next; });
       await loadBatches(selectedCompanyId);
     } catch {
-      setMessage("Falha ao excluir import.");
+      toast.error("Falha ao excluir import.", { id: deleteToastId });
     } finally {
       setDeletingBatchId(null);
     }
@@ -294,6 +302,7 @@ export default function ImportsPage() {
             <input
               type="file"
               accept=".xlsx,.xls,.csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,text/csv"
+              key={fileInputKey}
               onChange={(event) => setFile(event.target.files?.[0] ?? null)}
               className="mt-1 w-full rounded-xl border border-[--border] bg-[--surface-2] px-3 py-2.5 text-foreground file:mr-3 file:rounded-lg file:border-0 file:bg-brand/10 file:px-3 file:py-1 file:text-sm file:font-medium file:text-brand"
               required
@@ -313,14 +322,6 @@ export default function ImportsPage() {
         </div>
       </form>
       )}
-
-      {message ? (
-        <p className="mt-4 rounded-lg border border-[--border] bg-[--surface-2] px-3 py-2 text-sm text-foreground">
-          {message}
-        </p>
-      ) : null}
-
-
 
       {isLoading ? <p className="mt-6 text-sm text-[--text-muted]">Carregando...</p> : null}
 

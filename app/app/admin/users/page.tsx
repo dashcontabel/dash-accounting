@@ -2,6 +2,8 @@
 
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import { toast } from "sonner";
+import { confirmToast } from "@/app/components/confirm-toast";
 
 import AppShell from "@/app/components/app-shell";
 
@@ -58,7 +60,6 @@ export default function AdminUsersPage() {
   const [isOpen, setIsOpen] = useState(false);
   const [editingUser, setEditingUser] = useState<UserRow | null>(null);
   const [form, setForm] = useState<UserPayload>(initialForm);
-  const [message, setMessage] = useState<string | null>(null);
 
   const title = editingUser ? "Editar usuario" : "Novo usuario";
 
@@ -81,7 +82,7 @@ export default function AdminUsersPage() {
       return;
     }
     if (!usersRes.ok || !companiesRes.ok) {
-      setMessage("Nao foi possivel carregar os dados.");
+      toast.error("Nao foi possivel carregar os dados.");
       return;
     }
 
@@ -114,7 +115,6 @@ export default function AdminUsersPage() {
     setEditingUser(null);
     setForm(initialForm);
     setIsOpen(true);
-    setMessage(null);
   }
 
   function openEditModal(user: UserRow) {
@@ -128,7 +128,6 @@ export default function AdminUsersPage() {
       companyIds: user.companyIds,
     });
     setIsOpen(true);
-    setMessage(null);
   }
 
   function toggleCompany(companyId: string) {
@@ -146,8 +145,6 @@ export default function AdminUsersPage() {
   async function handleSave(event: FormEvent) {
     event.preventDefault();
     if (!canSubmit) return;
-
-    setMessage(null);
 
     const payload = {
       ...form,
@@ -168,24 +165,26 @@ export default function AdminUsersPage() {
 
     if (!response.ok) {
       const data = (await response.json()) as { error?: string };
-      setMessage(data.error ?? "Falha ao salvar usuario.");
+      toast.error(data.error ?? "Falha ao salvar usuario.");
       return;
     }
 
+    toast.success(editingUser ? "Usuário atualizado com sucesso." : "Usuário criado com sucesso.");
     setIsOpen(false);
     await load();
   }
 
   async function handleDelete(userId: string) {
-    if (!confirm("Deseja remover este usuario?")) return;
+    if (!await confirmToast("Deseja remover este usuário?")) return;
 
     const response = await fetch(`/api/admin/users/${userId}`, { method: "DELETE" });
     if (!response.ok) {
       const data = (await response.json()) as { error?: string };
-      setMessage(data.error ?? "Falha ao remover usuario.");
+      toast.error(data.error ?? "Falha ao remover usuario.");
       return;
     }
 
+    toast.success("Usuário removido.");
     await load();
   }
 
@@ -213,7 +212,6 @@ export default function AdminUsersPage() {
         </button>
       </div>
 
-      {message ? <p className="mt-4 text-sm text-red-600 dark:text-red-400">{message}</p> : null}
       {isLoading ? <p className="mt-6 text-sm text-[--text-muted]">Carregando...</p> : null}
 
       {!isLoading ? (

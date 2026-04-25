@@ -126,6 +126,18 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // Validate that the file is not a consolidated (multi-month) report
+    if (parsedWorkbook.metadata?.periodEndMonth) {
+      const [startMon, startYear] = (parsedWorkbook.metadata.referenceMonth ?? "").split("-").reverse();
+      const [endMon, endYear] = parsedWorkbook.metadata.periodEndMonth.split("-").reverse();
+      return NextResponse.json(
+        {
+          error: `Balancete consolidado detectado (${startMon}/${startYear} até ${endMon}/${endYear}). Importe apenas balancetes mensais, um mês por arquivo.`,
+        },
+        { status: 422 },
+      );
+    }
+
     // Validate that the period in the file matches the referenceMonth selected by the user
     if (parsedForm.data.referenceMonth && parsedWorkbook.metadata?.referenceMonth) {
       if (parsedWorkbook.metadata.referenceMonth !== parsedForm.data.referenceMonth) {

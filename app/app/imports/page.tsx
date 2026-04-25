@@ -38,6 +38,15 @@ type MeResponse = {
 
 type SummaryPayload = Record<string, number>;
 
+type BatchFileResult = {
+  file: File;
+  status: "pending" | "uploading" | "done" | "warning" | "error";
+  message: string;
+  detectedMonth: string | null;
+};
+
+const MAX_BATCH_FILES = 12;
+
 export default function ImportsPage() {
   const router = useRouter();
   const [me, setMe] = useState<MeUser | null>(null);
@@ -53,6 +62,31 @@ export default function ImportsPage() {
   const [isUploading, setIsUploading] = useState(false);
   const [deletingBatchId, setDeletingBatchId] = useState<string | null>(null);
   const [fileInputKey, setFileInputKey] = useState(0);
+
+  // Batch import state
+  const [batchMode, setBatchMode] = useState(false);
+  const [batchFileResults, setBatchFileResults] = useState<BatchFileResult[]>([]);
+  const [isBatchRunning, setIsBatchRunning] = useState(false);
+  const [batchInputKey, setBatchInputKey] = useState(0);
+
+  // List filter + pagination
+  const [filterMonth, setFilterMonth] = useState("");
+  const [filterStatus, setFilterStatus] = useState<"" | "DONE" | "FAILED" | "PENDING" | "PROCESSING">("");
+  const [filterName, setFilterName] = useState("");
+  const [currentPage, setCurrentPage] = useState(1);
+  const PAGE_SIZE = 8;
+
+  const filteredBatches = useMemo(() => {
+    return batches.filter((b) => {
+      if (filterMonth && b.referenceMonth !== filterMonth) return false;
+      if (filterStatus && b.status !== filterStatus) return false;
+      if (filterName && !(b.fileName ?? "").toLowerCase().includes(filterName.toLowerCase())) return false;
+      return true;
+    });
+  }, [batches, filterMonth, filterStatus, filterName]);
+
+  const totalPages = Math.max(1, Math.ceil(filteredBatches.length / PAGE_SIZE));
+  const pagedBatches = filteredBatches.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
 
   const canUpload = useMemo(
     () => Boolean(file && selectedCompanyId && referenceMonth && me?.role === "ADMIN"),
@@ -72,6 +106,7 @@ export default function ImportsPage() {
 
     const data = (await response.json()) as { batches: ImportBatch[] };
     setBatches(data.batches);
+    setCurrentPage(1);
   }
 
   async function loadBatchDetails(batchId: string) {
@@ -244,6 +279,61 @@ export default function ImportsPage() {
     router.refresh();
   }
 
+  async function handleBatchUpload() {
+    if (isBatchRunning || batchFileResults.length === 0 || !selectedCompanyId) return;
+
+    setIsBatchRunning(true);
+
+    for (let i = 0; i < batchFileResults.length; i++) {
+      setBatchFileResults((prev) =>
+        prev.map((r, idx) => (idx === i ? { ...r, status: "uploading", message: "Processando..." } : r)),
+      );
+
+      try {
+        const formData = new FormData();
+        formData.append("file", batchFileResults[i]!.file);
+        formData.append("companyId", selectedCompanyId);
+        // No referenceMonth — server auto-detects from file
+
+        const response = await fetch("/api/imports/xlsx", { method: "POST", body: formData });
+        const data = (await response.json()) as {
+          error?: string;
+          idempotent?: boolean;
+          batchId?: string;
+        };
+
+        if (!response.ok) {
+          setBatchFileResults((prev) =>
+            prev.map((r, idx) =>
+              idx === i ? { ...r, status: "error", message: data.error ?? "Falha no upload." } : r,
+            ),
+          );
+        } else if (data.idempotent) {
+          setBatchFileResults((prev) =>
+            prev.map((r, idx) =>
+              idx === i ? { ...r, status: "warning", message: "Arquivo já importado para este período." } : r,
+            ),
+          );
+        } else {
+          setBatchFileResults((prev) =>
+            prev.map((r, idx) =>
+              idx === i ? { ...r, status: "done", message: "Importado com sucesso." } : r,
+            ),
+          );
+        }
+      } catch {
+        setBatchFileResults((prev) =>
+          prev.map((r, idx) =>
+            idx === i ? { ...r, status: "error", message: "Falha de conexão." } : r,
+          ),
+        );
+      }
+    }
+
+    setIsBatchRunning(false);
+    await loadBatches(selectedCompanyId);
+  }
+
   return (
     <AppShell role={me?.role ?? null} email={me?.email ?? null} onLogout={handleLogout}>
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -262,76 +352,252 @@ export default function ImportsPage() {
       )}
 
       {me?.role === "ADMIN" && (
-      <form
-        onSubmit={(event) => void handleUpload(event)}
-        className="mt-6 rounded-xl border border-[--border] bg-[--surface] p-5 shadow-sm"
-      >
-        <div className="grid gap-4 md:grid-cols-3">
-          <label className="text-sm font-medium text-foreground">
-            Empresa
-            <select
-              value={selectedCompanyId}
-              onChange={(event) => void handleCompanyChange(event.target.value)}
-              disabled={me?.role !== "ADMIN"}
-              className="mt-1 w-full rounded-xl border border-[--border] bg-[--surface-2] px-3 py-2.5 text-foreground focus:outline-none focus:ring-2 focus:ring-brand/40 disabled:opacity-60 dark:scheme-dark dark:bg-[#1a2540] dark:text-zinc-100 [&_option]:dark:bg-[#1a2540] [&_option]:dark:text-zinc-100"
-            >
-              <option value="" disabled>
-                Selecione
-              </option>
-              {companies.map((company) => (
-                <option key={company.id} value={company.id}>
-                  {company.name}
-                </option>
-              ))}
-            </select>
-          </label>
-
-          <label className="text-sm font-medium text-foreground">
-            Mês de referência
-            <input
-              type="month"
-              value={referenceMonth}
-              onChange={(event) => setReferenceMonth(event.target.value)}
-              className="mt-1 w-full rounded-xl border border-[--border] bg-[--surface-2] px-3 py-2.5 text-foreground focus:outline-none focus:ring-2 focus:ring-brand/40 dark:scheme-dark dark:bg-[#1a2540] dark:text-zinc-100"
-              required
-            />
-          </label>
-
-          <label className="text-sm font-medium text-foreground">
-            Arquivo (XLSX / XLS / CSV)
-            <input
-              type="file"
-              accept=".xlsx,.xls,.csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,text/csv"
-              key={fileInputKey}
-              onChange={(event) => setFile(event.target.files?.[0] ?? null)}
-              className="mt-1 w-full rounded-xl border border-[--border] bg-[--surface-2] px-3 py-2.5 text-foreground file:mr-3 file:rounded-lg file:border-0 file:bg-brand/10 file:px-3 file:py-1 file:text-sm file:font-medium file:text-brand"
-              required
-            />
-          </label>
-        </div>
-
-        <div className="mt-4 flex items-center gap-3">
+      <div className="mt-6 rounded-xl border border-[--border] bg-[--surface] shadow-sm">
+        {/* Mode toggle */}
+        <div className="flex border-b border-[--border]">
           <button
-            type="submit"
-            disabled={!canUpload || isUploading}
-            className="rounded-xl bg-brand px-4 py-2 text-sm font-medium text-white hover:opacity-90 disabled:opacity-40"
+            type="button"
+            onClick={() => { setBatchMode(false); }}
+            className={`flex-1 rounded-tl-xl px-4 py-3 text-sm font-medium transition-colors ${
+              !batchMode
+                ? "bg-brand/10 text-brand"
+                : "text-[--text-muted] hover:bg-[--surface-2]"
+            }`}
           >
-            {isUploading ? "Processando..." : "Importar"}
+            Importação simples
           </button>
-          <p className="text-xs text-[--text-muted]">Limite: 10 MB por arquivo</p>
+          <button
+            type="button"
+            onClick={() => { setBatchMode(true); setBatchFileResults([]); setBatchInputKey((k) => k + 1); }}
+            className={`flex-1 rounded-tr-xl px-4 py-3 text-sm font-medium transition-colors ${
+              batchMode
+                ? "bg-brand/10 text-brand"
+                : "text-[--text-muted] hover:bg-[--surface-2]"
+            }`}
+          >
+            Importar em lote (até 12 meses)
+          </button>
         </div>
-      </form>
+
+        <div className="p-5">
+          {/* ── SINGLE MODE ── */}
+          {!batchMode && (
+            <form onSubmit={(event) => void handleUpload(event)}>
+              <div className="grid gap-4 md:grid-cols-3">
+                <label className="text-sm font-medium text-foreground">
+                  Empresa
+                  <select
+                    value={selectedCompanyId}
+                    onChange={(event) => void handleCompanyChange(event.target.value)}
+                    disabled={me?.role !== "ADMIN"}
+                    className="mt-1 w-full rounded-xl border border-[--border] bg-[--surface-2] px-3 py-2.5 text-foreground focus:outline-none focus:ring-2 focus:ring-brand/40 disabled:opacity-60 dark:scheme-dark dark:bg-[#1a2540] dark:text-zinc-100 [&_option]:dark:bg-[#1a2540] [&_option]:dark:text-zinc-100"
+                  >
+                    <option value="" disabled>Selecione</option>
+                    {companies.map((company) => (
+                      <option key={company.id} value={company.id}>{company.name}</option>
+                    ))}
+                  </select>
+                </label>
+
+                <label className="text-sm font-medium text-foreground">
+                  Mês de referência
+                  <input
+                    type="month"
+                    value={referenceMonth}
+                    onChange={(event) => setReferenceMonth(event.target.value)}
+                    className="mt-1 w-full rounded-xl border border-[--border] bg-[--surface-2] px-3 py-2.5 text-foreground focus:outline-none focus:ring-2 focus:ring-brand/40 dark:scheme-dark dark:bg-[#1a2540] dark:text-zinc-100"
+                    required
+                  />
+                </label>
+
+                <label className="text-sm font-medium text-foreground">
+                  Arquivo (XLSX / XLS / CSV)
+                  <input
+                    type="file"
+                    accept=".xlsx,.xls,.csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,text/csv"
+                    key={fileInputKey}
+                    onChange={(event) => setFile(event.target.files?.[0] ?? null)}
+                    className="mt-1 w-full rounded-xl border border-[--border] bg-[--surface-2] px-3 py-2.5 text-foreground file:mr-3 file:rounded-lg file:border-0 file:bg-brand/10 file:px-3 file:py-1 file:text-sm file:font-medium file:text-brand"
+                    required
+                  />
+                </label>
+              </div>
+
+              <div className="mt-4 flex items-center gap-3">
+                <button
+                  type="submit"
+                  disabled={!canUpload || isUploading}
+                  className="rounded-xl bg-brand px-4 py-2 text-sm font-medium text-white hover:opacity-90 disabled:opacity-40"
+                >
+                  {isUploading ? "Processando..." : "Importar"}
+                </button>
+                <p className="text-xs text-[--text-muted]">Limite: 10 MB por arquivo</p>
+              </div>
+            </form>
+          )}
+
+          {/* ── BATCH MODE ── */}
+          {batchMode && (
+            <div>
+              <div className="grid gap-4 md:grid-cols-2">
+                <label className="text-sm font-medium text-foreground">
+                  Empresa
+                  <select
+                    value={selectedCompanyId}
+                    onChange={(event) => void handleCompanyChange(event.target.value)}
+                    className="mt-1 w-full rounded-xl border border-[--border] bg-[--surface-2] px-3 py-2.5 text-foreground focus:outline-none focus:ring-2 focus:ring-brand/40 disabled:opacity-60 dark:scheme-dark dark:bg-[#1a2540] dark:text-zinc-100 [&_option]:dark:bg-[#1a2540] [&_option]:dark:text-zinc-100"
+                  >
+                    <option value="" disabled>Selecione</option>
+                    {companies.map((company) => (
+                      <option key={company.id} value={company.id}>{company.name}</option>
+                    ))}
+                  </select>
+                </label>
+
+                <label className="text-sm font-medium text-foreground">
+                  Arquivos (máx. {MAX_BATCH_FILES} — o mês é detectado automaticamente)
+                  <input
+                    key={batchInputKey}
+                    type="file"
+                    multiple
+                    accept=".xlsx,.xls,.csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,text/csv"
+                    onChange={(event) => {
+                      const files = Array.from(event.target.files ?? []).slice(0, MAX_BATCH_FILES);
+                      setBatchFileResults(
+                        files.map((f) => ({ file: f, status: "pending", message: "Aguardando", detectedMonth: null })),
+                      );
+                    }}
+                    className="mt-1 w-full rounded-xl border border-[--border] bg-[--surface-2] px-3 py-2.5 text-foreground file:mr-3 file:rounded-lg file:border-0 file:bg-brand/10 file:px-3 file:py-1 file:text-sm file:font-medium file:text-brand"
+                  />
+                </label>
+              </div>
+
+              {batchFileResults.length > 0 && (
+                <div className="mt-4">
+                  <div className="overflow-hidden rounded-xl border border-[--border]">
+                    <table className="w-full text-sm">
+                      <thead className="bg-[--surface-2] text-xs font-semibold uppercase tracking-wide text-[--text-muted]">
+                        <tr>
+                          <th className="px-4 py-2.5 text-left">Arquivo</th>
+                          <th className="px-4 py-2.5 text-left">Status</th>
+                          <th className="px-4 py-2.5 text-left">Mensagem</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-[--border]">
+                        {batchFileResults.map((r, idx) => (
+                          <tr key={idx} className="bg-[--surface]">
+                            <td className="max-w-50 truncate px-4 py-2.5 font-medium text-foreground" title={r.file.name}>
+                              {r.file.name}
+                            </td>
+                            <td className="px-4 py-2.5">
+                              <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${
+                                r.status === "done"      ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-400" :
+                                r.status === "error"     ? "bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-400" :
+                                r.status === "warning"   ? "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-400" :
+                                r.status === "uploading" ? "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-400" :
+                                                           "bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400"
+                              }`}>
+                                {r.status === "pending"   && "Aguardando"}
+                                {r.status === "uploading" && "Processando…"}
+                                {r.status === "done"      && "Concluído"}
+                                {r.status === "warning"   && "Já importado"}
+                                {r.status === "error"     && "Erro"}
+                              </span>
+                            </td>
+                            <td className="px-4 py-2.5 text-[--text-muted]">{r.message}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  <div className="mt-4 flex items-center gap-3">
+                    <button
+                      type="button"
+                      disabled={isBatchRunning || !selectedCompanyId || batchFileResults.every((r) => r.status === "done")}
+                      onClick={() => void handleBatchUpload()}
+                      className="rounded-xl bg-brand px-4 py-2 text-sm font-medium text-white hover:opacity-90 disabled:opacity-40"
+                    >
+                      {isBatchRunning ? "Importando..." : "Importar lote"}
+                    </button>
+                    <button
+                      type="button"
+                      disabled={isBatchRunning}
+                      onClick={() => { setBatchFileResults([]); setBatchInputKey((k) => k + 1); }}
+                      className="rounded-xl border border-[--border] px-4 py-2 text-sm font-medium text-[--text-muted] hover:bg-[--surface-2] disabled:opacity-40"
+                    >
+                      Limpar
+                    </button>
+                    <p className="text-xs text-[--text-muted]">Limite: 10 MB por arquivo</p>
+                  </div>
+                </div>
+              )}
+
+              {batchFileResults.length === 0 && (
+                <p className="mt-3 text-xs text-[--text-muted]">
+                  Selecione até {MAX_BATCH_FILES} arquivos. O mês de referência será detectado automaticamente a partir do cabeçalho de cada balancete.
+                </p>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
       )}
 
       {isLoading ? <p className="mt-6 text-sm text-[--text-muted]">Carregando...</p> : null}
 
       {!isLoading ? (
         <section className="mt-6 space-y-3">
-          {batches.length === 0 ? (
-            <p className="text-sm text-[--text-muted]">Nenhum batch importado para a empresa selecionada.</p>
+          {/* ── Filters ── */}
+          {batches.length > 0 && (
+            <div className="flex flex-wrap gap-2 rounded-xl border border-[--border] bg-[--surface] p-3">
+              <input
+                type="month"
+                value={filterMonth}
+                onChange={(e) => { setFilterMonth(e.target.value); setCurrentPage(1); }}
+                className="rounded-lg border border-[--border] bg-[--surface-2] px-3 py-1.5 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-brand/40 dark:scheme-dark dark:bg-[#1a2540] dark:text-zinc-100"
+                title="Filtrar por mês"
+              />
+              <select
+                value={filterStatus}
+                onChange={(e) => { setFilterStatus(e.target.value as typeof filterStatus); setCurrentPage(1); }}
+                className="rounded-lg border border-[--border] bg-[--surface-2] px-3 py-1.5 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-brand/40 dark:scheme-dark dark:bg-[#1a2540] dark:text-zinc-100"
+              >
+                <option value="">Todos os status</option>
+                <option value="DONE">Concluído</option>
+                <option value="FAILED">Falha</option>
+                <option value="PROCESSING">Processando</option>
+                <option value="PENDING">Pendente</option>
+              </select>
+              <input
+                type="text"
+                placeholder="Buscar por nome do arquivo..."
+                value={filterName}
+                onChange={(e) => { setFilterName(e.target.value); setCurrentPage(1); }}
+                className="min-w-48 flex-1 rounded-lg border border-[--border] bg-[--surface-2] px-3 py-1.5 text-sm text-foreground placeholder-[--text-muted] focus:outline-none focus:ring-2 focus:ring-brand/40"
+              />
+              {(filterMonth || filterStatus || filterName) && (
+                <button
+                  type="button"
+                  onClick={() => { setFilterMonth(""); setFilterStatus(""); setFilterName(""); setCurrentPage(1); }}
+                  className="rounded-lg border border-[--border] px-3 py-1.5 text-xs text-[--text-muted] hover:bg-[--surface-2]"
+                >
+                  Limpar filtros
+                </button>
+              )}
+              <span className="ml-auto self-center text-xs text-[--text-muted]">
+                {filteredBatches.length} de {batches.length} registros
+              </span>
+            </div>
+          )}
+
+          {filteredBatches.length === 0 ? (
+            <p className="text-sm text-[--text-muted]">
+              {batches.length === 0 ? "Nenhum batch importado para a empresa selecionada." : "Nenhum resultado para os filtros aplicados."}
+            </p>
           ) : null}
 
-          {batches.map((batch) => (
+          {pagedBatches.map((batch) => (
             <article
               key={batch.id}
               className={`rounded-xl border bg-[--surface] p-4 shadow-sm transition-colors ${
@@ -440,6 +706,42 @@ export default function ImportsPage() {
               )}
             </article>
           ))}
+
+          {/* ── Pagination ── */}
+          {totalPages > 1 && (
+            <div className="flex items-center justify-center gap-1 pt-2">
+              <button
+                type="button"
+                disabled={currentPage === 1}
+                onClick={() => setCurrentPage((p) => p - 1)}
+                className="rounded-lg border border-[--border] px-3 py-1.5 text-xs font-medium text-[--text-muted] hover:bg-[--surface-2] disabled:opacity-40"
+              >
+                ← Anterior
+              </button>
+              {Array.from({ length: totalPages }, (_, i) => i + 1).map((p) => (
+                <button
+                  key={p}
+                  type="button"
+                  onClick={() => setCurrentPage(p)}
+                  className={`rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors ${
+                    p === currentPage
+                      ? "border-brand bg-brand text-white"
+                      : "border-[--border] text-[--text-muted] hover:bg-[--surface-2]"
+                  }`}
+                >
+                  {p}
+                </button>
+              ))}
+              <button
+                type="button"
+                disabled={currentPage === totalPages}
+                onClick={() => setCurrentPage((p) => p + 1)}
+                className="rounded-lg border border-[--border] px-3 py-1.5 text-xs font-medium text-[--text-muted] hover:bg-[--surface-2] disabled:opacity-40"
+              >
+                Próxima →
+              </button>
+            </div>
+          )}
         </section>
       ) : null}
     </AppShell>

@@ -188,6 +188,8 @@ export default function Home() {
   const [granularity, setGranularity] = useState<PeriodGranularity>("monthly");
   const [selectedYear, setSelectedYear] = useState<string>("");
   const [selectedMonth, setSelectedMonth] = useState<string>("");
+  const [rangeFrom, setRangeFrom] = useState("01");
+  const [rangeTo, setRangeTo] = useState("12");
   const [loadingSummary, setLoadingSummary] = useState(false);
   const [recalculating, setRecalculating] = useState(false);
   const [recalcMsg, setRecalcMsg] = useState<string | null>(null);
@@ -283,8 +285,8 @@ export default function Home() {
 
   // Aggregated periods for charts (grouped by granularity)
   const aggregatedPeriods = useMemo(
-    () => aggregateSummaries(mergedSummaries, granularity, selectedYear),
-    [mergedSummaries, granularity, selectedYear],
+    () => aggregateSummaries(mergedSummaries, granularity, selectedYear, rangeFrom, rangeTo),
+    [mergedSummaries, granularity, selectedYear, rangeFrom, rangeTo],
   );
 
   // For non-monthly granularities, the active period is the last (most recent) chunk.
@@ -352,6 +354,15 @@ export default function Home() {
       });
   }, [granularity, activePeriod, aggregatedPeriods, mergedSummaries, selectedYear]);
 
+  // Trend series: always monthly for the full year, regardless of active granularity
+  const trendSeries = useMemo(() => {
+    const yearData = aggregateSummaries(mergedSummaries, "monthly", selectedYear, "01", "12");
+    return yearData.map((p) => ({
+      period: p.label,
+      Resultado: p.dataJson["RESULTADO"] ?? 0,
+    }));
+  }, [mergedSummaries, selectedYear]);
+
   // Per-company receitas series (for comparative bar chart when multi-company)
   const isMultiCompany = companiesData.length > 1;
   const COMPANY_COLORS = ["#10b981", "#0f4c81", "#f59e0b", "#ef4444", "#a855f7", "#0ea5e9"];
@@ -362,14 +373,13 @@ export default function Home() {
       return aggregatedPeriods.map((period) => {
         const obj: Record<string, string | number> = { period: period.label };
         for (const company of companiesData) {
-          const cPeriods = aggregateSummaries(company.summaries, granularity, selectedYear);
+          const cPeriods = aggregateSummaries(company.summaries, granularity, selectedYear, rangeFrom, rangeTo);
           const match = cPeriods.find((cp) => cp.label === period.label);
           obj[company.companyName] = match?.dataJson["RECEITAS_TOTAL"] ?? 0;
         }
         return obj;
       });
     }
-    // Non-monthly: individual months within the active period
     const months = activePeriod?.months ?? [];
     return months.map((month) => {
       const mm = month.slice(5, 7);
@@ -381,7 +391,33 @@ export default function Home() {
       }
       return obj;
     });
-  }, [companiesData, aggregatedPeriods, granularity, selectedYear, isMultiCompany, activePeriod]);
+  }, [companiesData, aggregatedPeriods, granularity, selectedYear, isMultiCompany, activePeriod, rangeFrom, rangeTo]);
+
+  const comparativeDespesasSeries = useMemo(() => {
+    if (!isMultiCompany) return [];
+    if (granularity === "monthly") {
+      return aggregatedPeriods.map((period) => {
+        const obj: Record<string, string | number> = { period: period.label };
+        for (const company of companiesData) {
+          const cPeriods = aggregateSummaries(company.summaries, granularity, selectedYear, rangeFrom, rangeTo);
+          const match = cPeriods.find((cp) => cp.label === period.label);
+          obj[company.companyName] = match?.dataJson["DESPESAS_TOTAL"] ?? 0;
+        }
+        return obj;
+      });
+    }
+    const months = activePeriod?.months ?? [];
+    return months.map((month) => {
+      const mm = month.slice(5, 7);
+      const label = `${MONTH_LABELS[mm] ?? mm}/${selectedYear.slice(2)}`;
+      const obj: Record<string, string | number> = { period: label };
+      for (const company of companiesData) {
+        const s = company.summaries.find((cs) => cs.referenceMonth === month);
+        obj[company.companyName] = s?.dataJson["DESPESAS_TOTAL"] ?? 0;
+      }
+      return obj;
+    });
+  }, [companiesData, aggregatedPeriods, granularity, selectedYear, isMultiCompany, activePeriod, rangeFrom, rangeTo]);
 
   // Heatmap data — Resultado por empresa × mês.
   // Columns = individual months of the active period (2 for bimestral, 3 for trimestral, etc.).
@@ -598,6 +634,8 @@ export default function Home() {
                   granularity={granularity}
                   year={selectedYear}
                   month={selectedMonth}
+                  rangeFrom={rangeFrom}
+                  rangeTo={rangeTo}
                   years={years}
                   monthsForYear={monthsForYear}
                   onGranularityChange={setGranularity}
@@ -607,6 +645,8 @@ export default function Home() {
                     if (first) setSelectedMonth(first.referenceMonth.slice(5, 7));
                   }}
                   onMonthChange={setSelectedMonth}
+                  onRangeFromChange={setRangeFrom}
+                  onRangeToChange={setRangeTo}
                 />
               </div>
             </div>
@@ -751,7 +791,7 @@ export default function Home() {
           </div>
 
           {/* ══ ANÁLISE ANUAL GROUP ══ */}
-          <div className="mt-5 rounded-2xl border border-zinc-300 bg-zinc-500/10 p-5 dark:border-zinc-700/40 dark:bg-zinc-800/20 sm:p-6">
+          <div className="mt-5 rounded-2xl border border-zinc-300 bg-zinc-500/10 p-3 dark:border-zinc-700/40 dark:bg-zinc-800/20 sm:p-5 lg:p-6">
             <div className="mb-4 flex items-center gap-2">
               <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-blue-100 text-blue-600 dark:bg-blue-900/50 dark:text-blue-400">
                 {Icons.chart}
@@ -772,30 +812,79 @@ export default function Home() {
               <div className="ml-2 h-px flex-1 bg-zinc-200 dark:bg-zinc-700" />
             </div>
 
-            <div className="grid gap-4 lg:grid-cols-5">
-              {/* Bar chart */}
-              <div className="col-span-3 rounded-xl border border-zinc-100 bg-white p-4 dark:border-zinc-700/50 dark:bg-zinc-900/50">
-                <p className="mb-3 text-xs font-semibold text-zinc-500 dark:text-zinc-400">Receitas × Despesas por período</p>
-                {chartSeries.length > 0 ? (
-                  <ResponsiveContainer width="100%" height={240}>
-                    <BarChart data={chartSeries} barCategoryGap="30%" barGap={3}>
-                      <CartesianGrid strokeDasharray="3 3" stroke={chartTheme.grid} vertical={false} />
-                      <XAxis dataKey="period" tick={{ fontSize: 11, fill: chartTheme.tick }} axisLine={false} tickLine={false} />
-                      <YAxis tickFormatter={formatCurrencyShort} width={70} tick={{ fontSize: 10, fill: chartTheme.tick }} axisLine={false} tickLine={false} />
-                      <Tooltip formatter={currencyTooltipFormatter} contentStyle={{ fontSize: 12, borderRadius: 10, border: `1px solid ${chartTheme.tooltip.border}`, background: chartTheme.tooltip.background, boxShadow: "0 4px 12px rgba(0,0,0,.15)" }} labelStyle={{ fontWeight: 600, color: chartTheme.tooltip.label }} />
-                      <Legend wrapperStyle={{ fontSize: 11, paddingTop: 8 }} />
-                      <Bar dataKey="Receitas" fill="#10b981" radius={[4, 4, 0, 0]} />
-                      <Bar dataKey="Despesas" fill="#ef4444" radius={[4, 4, 0, 0]} />
-                      <ReferenceLine y={0} stroke={chartTheme.grid} />
-                    </BarChart>
-                  </ResponsiveContainer>
+            <div className="grid grid-cols-1 gap-3 sm:gap-4 lg:grid-cols-5">
+              {/* Bar chart — single company: merged Receitas × Despesas / multi-company: per-company */}
+              <div className="rounded-xl border border-zinc-100 bg-white p-3 dark:border-zinc-700/50 dark:bg-zinc-900/50 sm:p-4 lg:col-span-3">
+                {!isMultiCompany ? (
+                  <>
+                    <p className="mb-3 text-xs font-semibold text-zinc-500 dark:text-zinc-400">Receitas × Despesas por período</p>
+                    {chartSeries.length > 0 ? (
+                      <ResponsiveContainer width="100%" height={220}>
+                        <BarChart data={chartSeries} barCategoryGap="28%" barGap={2} margin={{ left: -4, right: 4 }}>
+                          <CartesianGrid strokeDasharray="3 3" stroke={chartTheme.grid} vertical={false} />
+                          <XAxis dataKey="period" tick={{ fontSize: 10, fill: chartTheme.tick }} axisLine={false} tickLine={false} interval="preserveStartEnd" />
+                          <YAxis tickFormatter={formatCurrencyShort} width={52} tick={{ fontSize: 10, fill: chartTheme.tick }} axisLine={false} tickLine={false} />
+                          <Tooltip formatter={currencyTooltipFormatter} contentStyle={{ fontSize: 12, borderRadius: 10, border: `1px solid ${chartTheme.tooltip.border}`, background: chartTheme.tooltip.background, boxShadow: "0 4px 12px rgba(0,0,0,.15)" }} labelStyle={{ fontWeight: 600, color: chartTheme.tooltip.label }} />
+                          <Legend wrapperStyle={{ fontSize: 11, paddingTop: 8 }} iconSize={10} />
+                          <Bar dataKey="Receitas" fill="#10b981" radius={[4, 4, 0, 0]} />
+                          <Bar dataKey="Despesas" fill="#ef4444" radius={[4, 4, 0, 0]} />
+                          <ReferenceLine y={0} stroke={chartTheme.grid} />
+                        </BarChart>
+                      </ResponsiveContainer>
+                    ) : (
+                      <p className="py-8 text-center text-sm text-zinc-400 dark:text-zinc-500">Sem dados no ano selecionado.</p>
+                    )}
+                  </>
                 ) : (
-                  <p className="py-8 text-center text-sm text-zinc-400 dark:text-zinc-500">Sem dados no ano selecionado.</p>
+                  <>
+                    <p className="mb-2 text-xs font-semibold text-zinc-500 dark:text-zinc-400">Receitas por empresa</p>
+                    {comparativeSeries.length > 0 ? (
+                      <ResponsiveContainer width="100%" height={160}>
+                        <BarChart data={comparativeSeries} barCategoryGap="22%" barGap={2} margin={{ left: -4, right: 4 }}>
+                          <CartesianGrid strokeDasharray="3 3" stroke={chartTheme.grid} vertical={false} />
+                          <XAxis dataKey="period" tick={{ fontSize: 10, fill: chartTheme.tick }} axisLine={false} tickLine={false} interval="preserveStartEnd" />
+                          <YAxis tickFormatter={formatCurrencyShort} width={52} tick={{ fontSize: 10, fill: chartTheme.tick }} axisLine={false} tickLine={false} />
+                          <Tooltip formatter={currencyTooltipFormatter} contentStyle={{ fontSize: 12, borderRadius: 10, border: `1px solid ${chartTheme.tooltip.border}`, background: chartTheme.tooltip.background, boxShadow: "0 4px 12px rgba(0,0,0,.15)" }} labelStyle={{ fontWeight: 600, color: chartTheme.tooltip.label }} />
+                          <Legend
+                            iconSize={8}
+                            wrapperStyle={{ fontSize: 10, paddingTop: 6, lineHeight: "18px" }}
+                            formatter={(value: string) => value.length > 20 ? `${value.slice(0, 18)}…` : value}
+                          />
+                          {companiesData.map((company, i) => (
+                            <Bar key={company.companyId} dataKey={company.companyName} fill={COMPANY_COLORS[i % COMPANY_COLORS.length]} radius={[4, 4, 0, 0]} />
+                          ))}
+                        </BarChart>
+                      </ResponsiveContainer>
+                    ) : (
+                      <p className="py-4 text-center text-sm text-zinc-400 dark:text-zinc-500">Sem dados no período.</p>
+                    )}
+                    <p className="mb-2 mt-4 text-xs font-semibold text-zinc-500 dark:text-zinc-400">Despesas por empresa</p>
+                    {comparativeDespesasSeries.length > 0 ? (
+                      <ResponsiveContainer width="100%" height={160}>
+                        <BarChart data={comparativeDespesasSeries} barCategoryGap="22%" barGap={2} margin={{ left: -4, right: 4 }}>
+                          <CartesianGrid strokeDasharray="3 3" stroke={chartTheme.grid} vertical={false} />
+                          <XAxis dataKey="period" tick={{ fontSize: 10, fill: chartTheme.tick }} axisLine={false} tickLine={false} interval="preserveStartEnd" />
+                          <YAxis tickFormatter={formatCurrencyShort} width={52} tick={{ fontSize: 10, fill: chartTheme.tick }} axisLine={false} tickLine={false} />
+                          <Tooltip formatter={currencyTooltipFormatter} contentStyle={{ fontSize: 12, borderRadius: 10, border: `1px solid ${chartTheme.tooltip.border}`, background: chartTheme.tooltip.background, boxShadow: "0 4px 12px rgba(0,0,0,.15)" }} labelStyle={{ fontWeight: 600, color: chartTheme.tooltip.label }} />
+                          <Legend
+                            iconSize={8}
+                            wrapperStyle={{ fontSize: 10, paddingTop: 6, lineHeight: "18px" }}
+                            formatter={(value: string) => value.length > 20 ? `${value.slice(0, 18)}…` : value}
+                          />
+                          {companiesData.map((company, i) => (
+                            <Bar key={company.companyId} dataKey={company.companyName} fill={COMPANY_COLORS[i % COMPANY_COLORS.length]} radius={[4, 4, 0, 0]} />
+                          ))}
+                        </BarChart>
+                      </ResponsiveContainer>
+                    ) : (
+                      <p className="py-4 text-center text-sm text-zinc-400 dark:text-zinc-500">Sem dados no período.</p>
+                    )}
+                  </>
                 )}
               </div>
 
               {/* Pie chart */}
-              <div className="col-span-2 rounded-xl border border-zinc-100 bg-white p-4 dark:border-zinc-700/50 dark:bg-zinc-900/50">
+              <div className="rounded-xl border border-zinc-100 bg-white p-3 dark:border-zinc-700/50 dark:bg-zinc-900/50 sm:p-4 lg:col-span-2">
                 <p className="mb-3 text-xs font-semibold text-zinc-500 dark:text-zinc-400">Composição das despesas</p>
                 {expensePieData.length > 0 ? (
                   <>
@@ -825,47 +914,18 @@ export default function Home() {
             </div>
 
             {/* Line chart — resultado trend */}
-            {chartSeries.length > 1 && (
+            {trendSeries.length > 1 && (
               <div className="mt-4 rounded-xl border border-zinc-100 bg-white p-4 dark:border-zinc-700/50 dark:bg-zinc-900/50">
                 <p className="mb-3 text-xs font-semibold text-zinc-500 dark:text-zinc-400">Tendência do resultado</p>
                 <ResponsiveContainer width="100%" height={170}>
-                  <LineChart data={chartSeries}>
+                  <LineChart data={trendSeries} margin={{ left: -4, right: 4 }}>
                     <CartesianGrid strokeDasharray="3 3" stroke={chartTheme.grid} vertical={false} />
-                    <XAxis dataKey="period" tick={{ fontSize: 11, fill: chartTheme.tick }} axisLine={false} tickLine={false} />
-                    <YAxis tickFormatter={formatCurrencyShort} width={70} tick={{ fontSize: 10, fill: chartTheme.tick }} axisLine={false} tickLine={false} />
+                    <XAxis dataKey="period" tick={{ fontSize: 10, fill: chartTheme.tick }} axisLine={false} tickLine={false} interval="preserveStartEnd" />
+                    <YAxis tickFormatter={formatCurrencyShort} width={52} tick={{ fontSize: 10, fill: chartTheme.tick }} axisLine={false} tickLine={false} />
                     <Tooltip formatter={currencyTooltipFormatter} contentStyle={{ fontSize: 12, borderRadius: 10, border: `1px solid ${chartTheme.tooltip.border}`, background: chartTheme.tooltip.background, boxShadow: "0 4px 12px rgba(0,0,0,.15)" }} labelStyle={{ fontWeight: 600, color: chartTheme.tooltip.label }} />
                     <ReferenceLine y={0} stroke={chartTheme.grid} strokeDasharray="4 2" />
                     <Line type="monotone" dataKey="Resultado" stroke={theme === "dark" ? "#60a5fa" : "#0f4c81"} strokeWidth={2.5} dot={{ fill: theme === "dark" ? "#60a5fa" : "#0f4c81", r: 4, strokeWidth: 0 }} activeDot={{ r: 6 }} />
                   </LineChart>
-                </ResponsiveContainer>
-              </div>
-            )}
-
-            {/* ── Multi-company comparative section ── */}
-            {isMultiCompany && comparativeSeries.length > 0 && (
-              <div className="mt-4 rounded-xl border border-purple-100 bg-purple-50/30 p-4 dark:border-purple-900/30 dark:bg-purple-950/10">
-                <div className="mb-3 flex items-center gap-2">
-                  <span className="flex h-6 w-6 items-center justify-center rounded-lg bg-purple-100 text-purple-600 dark:bg-purple-900/50 dark:text-purple-400">
-                    {Icons.building}
-                  </span>
-                  <p className="text-xs font-semibold text-purple-800 dark:text-purple-300">Receitas por empresa</p>
-                </div>
-                <ResponsiveContainer width="100%" height={220}>
-                  <BarChart data={comparativeSeries} barCategoryGap="25%" barGap={2}>
-                    <CartesianGrid strokeDasharray="3 3" stroke={chartTheme.grid} vertical={false} />
-                    <XAxis dataKey="period" tick={{ fontSize: 11, fill: chartTheme.tick }} axisLine={false} tickLine={false} />
-                    <YAxis tickFormatter={formatCurrencyShort} width={70} tick={{ fontSize: 10, fill: chartTheme.tick }} axisLine={false} tickLine={false} />
-                    <Tooltip formatter={currencyTooltipFormatter} contentStyle={{ fontSize: 12, borderRadius: 10, border: `1px solid ${chartTheme.tooltip.border}`, background: chartTheme.tooltip.background, boxShadow: "0 4px 12px rgba(0,0,0,.15)" }} labelStyle={{ fontWeight: 600, color: chartTheme.tooltip.label }} />
-                    <Legend wrapperStyle={{ fontSize: 11, paddingTop: 8 }} />
-                    {companiesData.map((company, i) => (
-                      <Bar
-                        key={company.companyId}
-                        dataKey={company.companyName}
-                        fill={COMPANY_COLORS[i % COMPANY_COLORS.length]}
-                        radius={[4, 4, 0, 0]}
-                      />
-                    ))}
-                  </BarChart>
                 </ResponsiveContainer>
               </div>
             )}

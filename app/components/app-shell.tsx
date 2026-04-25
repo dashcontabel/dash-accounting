@@ -41,6 +41,7 @@ const navItems = [
     href: "/app/imports",
     label: "Importações",
     adminOnly: false,
+    clientHidden: true,
     icon: (
       <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
         <path strokeLinecap="round" strokeLinejoin="round" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M9 19l3 3m0 0l3-3m-3 3V10" />
@@ -108,7 +109,11 @@ export default function AppShell({ role, email, children, onLogout }: AppShellPr
     currentItem?.label ??
     (pathname.startsWith("/app/admin/") ? "Administração" : "Dashboard");
 
-  const visibleNav = navItems.filter((item) => !item.adminOnly || role === "ADMIN");
+  const visibleNav = navItems.filter(
+    (item) =>
+      (!item.adminOnly || role === "ADMIN") &&
+      (!item.clientHidden || role !== "CLIENT"),
+  );
 
   const adminNav = visibleNav.filter((i) => i.adminOnly);
   const publicNav = visibleNav.filter((i) => !i.adminOnly);

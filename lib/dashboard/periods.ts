@@ -1,11 +1,35 @@
-export type PeriodGranularity = "monthly" | "bimonthly" | "quarterly" | "semiannual" | "annual";
+export type PeriodGranularity =
+  | "monthly"
+  | "bimonthly_1"
+  | "bimonthly_2"
+  | "quarterly_1"
+  | "quarterly_2"
+  | "semiannual_1"
+  | "semiannual_2"
+  | "annual"
+  | "range";
 
 export const PERIOD_LABELS: Record<PeriodGranularity, string> = {
   monthly: "Mensal",
-  bimonthly: "Bimestral",
-  quarterly: "Trimestral",
-  semiannual: "Semestral",
+  bimonthly_1: "1º Bimestre",
+  bimonthly_2: "2º Bimestre",
+  quarterly_1: "1º Trimestre",
+  quarterly_2: "2º Trimestre",
+  semiannual_1: "1º Semestre",
+  semiannual_2: "2º Semestre",
   annual: "Anual",
+  range: "Intervalo",
+};
+
+// Fixed calendar month ranges [from, to] (1-indexed, inclusive)
+export const GRANULARITY_MONTH_RANGE: Partial<Record<PeriodGranularity, readonly [number, number]>> = {
+  bimonthly_1:  [1, 2],
+  bimonthly_2:  [3, 4],
+  quarterly_1:  [1, 3],
+  quarterly_2:  [4, 6],
+  semiannual_1: [1, 6],
+  semiannual_2: [7, 12],
+  annual:       [1, 12],
 };
 
 export type MonthlySummary = {
@@ -45,14 +69,6 @@ function sumData(summaries: MonthlySummary[]): Record<string, number> {
   return result;
 }
 
-function chunkMonths(months: string[], size: number): string[][] {
-  const chunks: string[][] = [];
-  for (let i = 0; i < months.length; i += size) {
-    chunks.push(months.slice(i, i + size));
-  }
-  return chunks;
-}
-
 const MONTH_LABELS: Record<string, string> = {
   "01": "Jan", "02": "Fev", "03": "Mar", "04": "Abr",
   "05": "Mai", "06": "Jun", "07": "Jul", "08": "Ago",
@@ -79,41 +95,46 @@ export function aggregateSummaries(
   summaries: MonthlySummary[],
   granularity: PeriodGranularity,
   year: string,
+  rangeFrom = "01",
+  rangeTo = "12",
 ): AggregatedPeriod[] {
-  const filtered = summaries
+  const yearFiltered = summaries
     .filter((s) => s.referenceMonth.startsWith(year))
     .sort((a, b) => a.referenceMonth.localeCompare(b.referenceMonth));
 
   if (granularity === "monthly") {
-    return filtered.map((s) => ({
+    return yearFiltered.map((s) => ({
       label: `${monthLabel(s.referenceMonth)}/${year.slice(2)}`,
       months: [s.referenceMonth],
       dataJson: s.dataJson,
     }));
   }
 
-  // Sequential chunking: group the actual available months in calendar order.
-  // This avoids partial first/last slots that happen with fixed calendar boundaries
-  // when data doesn't start on a period boundary (e.g. data starts in February).
-  const chunkSize: Record<PeriodGranularity, number> = {
-    monthly: 1,   // not used in this branch
-    bimonthly: 2,
-    quarterly: 3,
-    semiannual: 6,
-    annual: 12,
-  };
-  const size = chunkSize[granularity];
-  const months = filtered.map((s) => s.referenceMonth);
-  const chunks = chunkMonths(months, size);
+  // Determine the month range for the selected granularity
+  let fromMon: string;
+  let toMon: string;
 
-  return chunks.map((chunk) => {
-    const chunkSummaries = filtered.filter((s) => chunk.includes(s.referenceMonth));
-    return {
-      label: groupLabel(chunk, granularity),
-      months: chunk,
-      dataJson: sumData(chunkSummaries),
-    };
-  });
+  if (granularity === "range") {
+    fromMon = rangeFrom;
+    toMon = rangeTo;
+  } else {
+    const fixedRange = GRANULARITY_MONTH_RANGE[granularity];
+    if (!fixedRange) return [];
+    fromMon = String(fixedRange[0]).padStart(2, "0");
+    toMon   = String(fixedRange[1]).padStart(2, "0");
+  }
+
+  const fromYM = `${year}-${fromMon}`;
+  const toYM   = `${year}-${toMon}`;
+
+  const rangeFiltered = yearFiltered.filter(
+    (s) => s.referenceMonth >= fromYM && s.referenceMonth <= toYM,
+  );
+
+  if (rangeFiltered.length === 0) return [];
+
+  const months = rangeFiltered.map((s) => s.referenceMonth);
+  return [{ label: groupLabel(months, granularity), months, dataJson: sumData(rangeFiltered) }];
 }
 
 export function mergeCompanySummaries(

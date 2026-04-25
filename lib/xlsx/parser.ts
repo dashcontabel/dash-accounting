@@ -11,6 +11,7 @@ export type ParsedAccountRow = {
 export type XlsxFileMetadata = {
   cnpj: string | null;
   referenceMonth: string | null;
+  periodEndMonth: string | null;
 };
 
 type HeaderInfo = {
@@ -260,18 +261,27 @@ function extractCnpj(rows: unknown[][]): string | null {
   return null;
 }
 
-function extractReferenceMonth(rows: unknown[][]): string | null {
-  // Matches "DD/MM/YYYY" within strings like "01/01/2024 - 31/01/2024"
-  const PERIOD_REGEX = /(\d{2})\/(\d{2})\/(\d{4})/;
+function extractPeriodDates(rows: unknown[][]): { referenceMonth: string | null; periodEndMonth: string | null } {
   for (const row of rows.slice(0, 10)) {
     for (const cell of row) {
-      const match = PERIOD_REGEX.exec(String(cell ?? ""));
-      if (match) {
-        return `${match[3]}-${match[2]}`; // YYYY-MM
+      const text = String(cell ?? "");
+      const months: string[] = [];
+      const re = /(\d{2})\/(\d{2})\/(\d{4})/g;
+      let match: RegExpExecArray | null;
+      while ((match = re.exec(text)) !== null) {
+        months.push(`${match[3]}-${match[2]}`); // YYYY-MM
+      }
+      if (months.length >= 1) {
+        const referenceMonth = months[0]!;
+        const periodEndMonth =
+          months.length >= 2 && months[months.length - 1] !== referenceMonth
+            ? months[months.length - 1]!
+            : null;
+        return { referenceMonth, periodEndMonth };
       }
     }
   }
-  return null;
+  return { referenceMonth: null, periodEndMonth: null };
 }
 
 export function parseXlsxRows(rows: unknown[][]) {
@@ -334,7 +344,7 @@ export function parseXlsxRows(rows: unknown[][]) {
     },
     metadata: {
       cnpj: extractCnpj(rows),
-      referenceMonth: extractReferenceMonth(rows),
+      ...extractPeriodDates(rows),
     } satisfies XlsxFileMetadata,
   };
 }

@@ -38,36 +38,50 @@ describe("aggregateSummaries", () => {
     expect(result[0]!.dataJson.RECEITAS_TOTAL).toBe(10000);
   });
 
-  it("bimonthly groups months in pairs", () => {
-    const result = aggregateSummaries(summaries2024, "bimonthly", "2024");
-    expect(result).toHaveLength(3);
+  it("bimonthly_1 returns Jan–Feb group", () => {
+    const result = aggregateSummaries(summaries2024, "bimonthly_1", "2024");
+    expect(result).toHaveLength(1);
     expect(result[0]!.months).toEqual(["2024-01", "2024-02"]);
     expect(result[0]!.dataJson.RECEITAS_TOTAL).toBe(22000);
     expect(result[0]!.dataJson.DESPESAS_TOTAL).toBe(13000);
   });
 
-  it("quarterly groups months in triples", () => {
-    const result = aggregateSummaries(summaries2024, "quarterly", "2024");
-    expect(result).toHaveLength(2);
+  it("bimonthly_2 returns Mar–Apr group", () => {
+    const result = aggregateSummaries(summaries2024, "bimonthly_2", "2024");
+    expect(result).toHaveLength(1);
+    expect(result[0]!.months).toEqual(["2024-03", "2024-04"]);
+    expect(result[0]!.dataJson.RECEITAS_TOTAL).toBe(24000);
+  });
+
+  it("quarterly_1 returns Jan–Mar group", () => {
+    const result = aggregateSummaries(summaries2024, "quarterly_1", "2024");
+    expect(result).toHaveLength(1);
     expect(result[0]!.months).toEqual(["2024-01", "2024-02", "2024-03"]);
     expect(result[0]!.dataJson.RECEITAS_TOTAL).toBe(33000);
   });
 
-  it("semiannual groups all 6 months into one", () => {
-    const result = aggregateSummaries(summaries2024, "semiannual", "2024");
+  it("quarterly_2 returns Apr–Jun group", () => {
+    const result = aggregateSummaries(summaries2024, "quarterly_2", "2024");
+    expect(result).toHaveLength(1);
+    expect(result[0]!.months).toEqual(["2024-04", "2024-05", "2024-06"]);
+    expect(result[0]!.dataJson.RECEITAS_TOTAL).toBe(36000);
+  });
+
+  it("semiannual_1 groups Jan–Jun into one period", () => {
+    const result = aggregateSummaries(summaries2024, "semiannual_1", "2024");
     expect(result).toHaveLength(1);
     expect(result[0]!.dataJson.RECEITAS_TOTAL).toBe(69000);
     expect(result[0]!.dataJson.DESPESAS_TOTAL).toBe(39000);
   });
 
   it("recalculates RESULTADO correctly", () => {
-    const result = aggregateSummaries(summaries2024, "quarterly", "2024");
+    const result = aggregateSummaries(summaries2024, "quarterly_1", "2024");
     // Q1: receitas=33000, despesas=6000+7000+5000=18000, resultado=15000
     expect(result[0]!.dataJson.RESULTADO).toBe(33000 - 18000);
   });
 
   it("averages SD_BANCARIO instead of summing", () => {
-    const result = aggregateSummaries(summaries2024, "bimonthly", "2024");
+    const result = aggregateSummaries(summaries2024, "bimonthly_1", "2024");
     expect(result[0]!.dataJson.SD_BANCARIO).toBe(1000); // avg of 1000, 1000
   });
 

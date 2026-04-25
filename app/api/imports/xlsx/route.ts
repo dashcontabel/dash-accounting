@@ -93,17 +93,27 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Block import when a successful batch already exists for this company+month
-    // (different file — not the idempotency case which is handled by the checksum check below)
-    const existingDoneBatch = await prisma.importBatch.findFirst({
-      where: {
-        companyId: parsedForm.data.companyId,
-        referenceMonth: effectiveMonth,
-        status: "DONE",
-        NOT: { checksum },
-      },
-      select: { id: true },
-    });
+    // Run both validation queries in parallel — both depend only on data already available.
+    const [existingDoneBatch, cnpjCompany] = await Promise.all([
+      // Block import when a successful batch already exists for this company+month
+      prisma.importBatch.findFirst({
+        where: {
+          companyId: parsedForm.data.companyId,
+          referenceMonth: effectiveMonth,
+          status: "DONE",
+          NOT: { checksum },
+        },
+        select: { id: true },
+      }),
+      // Fetch company document for CNPJ validation only when the file contains a CNPJ
+      parsedWorkbook.metadata?.cnpj
+        ? prisma.company.findUnique({
+            where: { id: parsedForm.data.companyId },
+            select: { document: true },
+          })
+        : Promise.resolve(null),
+    ]);
+
     if (existingDoneBatch) {
       return NextResponse.json(
         { error: `O mes ${effectiveMonth} ja possui uma importacao concluida. Para substituir, exclua o import existente antes de reimportar.` },
@@ -112,12 +122,8 @@ export async function POST(request: NextRequest) {
     }
 
     // Validate that the file's CNPJ matches the selected company when both are available
-    if (parsedWorkbook.metadata?.cnpj) {
-      const company = await prisma.company.findUnique({
-        where: { id: parsedForm.data.companyId },
-        select: { document: true },
-      });
-      const companyCnpj = company?.document?.replace(/\D/g, "");
+    if (parsedWorkbook.metadata?.cnpj && cnpjCompany) {
+      const companyCnpj = cnpjCompany.document?.replace(/\D/g, "");
       if (companyCnpj && companyCnpj !== parsedWorkbook.metadata.cnpj) {
         return NextResponse.json(
           { error: "O CNPJ do arquivo nao corresponde a empresa selecionada." },

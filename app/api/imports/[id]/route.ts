@@ -131,6 +131,13 @@ export async function DELETE(request: NextRequest, context: RouteContext) {
       });
     }
 
+    // Bump Company.updatedAt so the freshness poller detects the deletion even when
+    // DashboardMonthlySummary timestamps decrease (or become null) after the delete.
+    await prisma.company.update({
+      where: { id: batch.companyId },
+      data: { updatedAt: new Date() },
+    });
+
     return new NextResponse(null, { status: 204 });
   } catch {
     return NextResponse.json(

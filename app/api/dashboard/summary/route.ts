@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 
 import { getUserFromRequest } from "@/lib/auth";
-import { assertCompanyAccess } from "@/lib/company-access";
 import { prisma } from "@/lib/prisma";
 
 export async function GET(request: NextRequest) {
@@ -25,34 +24,66 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "Nao autenticado." }, { status: 401 });
   }
 
-  // Validate access to all requested companies
-  for (const companyId of companyIds) {
-    try {
-      await assertCompanyAccess(user, companyId);
-    } catch {
-      return NextResponse.json({ error: "Acesso negado." }, { status: 403 });
-    }
+  // Single query: validate access + fetch company name + fetch summaries at once.
+  // ADMIN can access any active company; CLIENT is restricted to their UserCompany links.
+  const accessFilter =
+    user.role === "ADMIN"
+      ? {}
+      : { userCompanies: { some: { userId: user.id } } };
+
+  const companies = await prisma.company.findMany({
+    where: {
+      id: { in: companyIds },
+      isActive: true,
+      group: { isActive: true },
+      ...accessFilter,
+    },
+    select: {
+      id: true,
+      name: true,
+      updatedAt: true,
+      dashboardMonthlySummaries: {
+        orderBy: { referenceMonth: "asc" },
+        select: { referenceMonth: true, dataJson: true, updatedAt: true },
+      },
+    },
+  });
+
+  // Fewer results than requested means at least one companyId was not accessible.
+  if (companies.length < companyIds.length) {
+    return NextResponse.json({ error: "Acesso negado." }, { status: 403 });
   }
 
-  // Fetch summaries for all companies in parallel
-  const results = await Promise.all(
-    companyIds.map(async (companyId) => {
-      const summaries = await prisma.dashboardMonthlySummary.findMany({
-        where: { companyId },
-        orderBy: { referenceMonth: "asc" },
-        select: { referenceMonth: true, dataJson: true },
-      });
-      const company = await prisma.company.findUnique({
-        where: { id: companyId },
-        select: { id: true, name: true },
-      });
-      return {
-        companyId,
-        companyName: company?.name ?? companyId,
-        summaries,
-      };
-    }),
-  );
+  const results = companies.map((c) => {
+    const companyTs = c.updatedAt.toISOString();
+    const summaryMax = c.dashboardMonthlySummaries.reduce<string | null>(
+      (max, s) => {
+        const iso = s.updatedAt.toISOString();
+        return !max || iso > max ? iso : max;
+      },
+      null,
+    );
+    // Mirror freshness logic: max(company.updatedAt, max(summary.updatedAt))
+    const lastUpdatedAt = summaryMax && summaryMax > companyTs ? summaryMax : companyTs;
+    return {
+      companyId: c.id,
+      companyName: c.name,
+      lastUpdatedAt,
+      summaries: c.dashboardMonthlySummaries.map(({ referenceMonth, dataJson }) => ({
+        referenceMonth,
+        dataJson,
+      })),
+    };
+  });
 
-  return NextResponse.json({ companies: results });
+  return NextResponse.json(
+    { companies: results },
+    {
+      headers: {
+        // Summaries only change after an import or recalculate.
+        // Cache privately in the browser for 30 s; serve stale while revalidating for up to 60 s.
+        "Cache-Control": "private, max-age=30, stale-while-revalidate=60",
+      },
+    },
+  );
 }

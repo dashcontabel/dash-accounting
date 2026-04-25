@@ -65,7 +65,7 @@ const SECTIONS: { id: Section; label: string; shortLabel: string; icon: React.Re
   },
 ];
 
-function Badge({ color, children }: { color: "blue" | "emerald" | "amber" | "purple" | "red" | "zinc"; children: React.ReactNode }) {
+function Badge({ color, children }: { color: "blue" | "emerald" | "amber" | "purple" | "red" | "zinc" | "indigo"; children: React.ReactNode }) {
   const cls: Record<string, string> = {
     blue:    "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300",
     emerald: "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300",
@@ -73,6 +73,7 @@ function Badge({ color, children }: { color: "blue" | "emerald" | "amber" | "pur
     purple:  "bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-300",
     red:     "bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300",
     zinc:    "bg-zinc-100 text-zinc-700 dark:bg-zinc-700 dark:text-zinc-300",
+    indigo:  "bg-indigo-100 text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-300",
   };
   return (
     <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${cls[color]}`}>

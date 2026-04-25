@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import { confirmToast } from "@/app/components/confirm-toast";
 
 import AppShell from "@/app/components/app-shell";
+import { markCompanyStale, setActionHint } from "@/lib/dashboard/cache";
 
 type MeUser = {
   id: string;
@@ -205,6 +206,8 @@ export default function ImportsPage() {
         toast.warning("Arquivo já importado para este período.", { id: uploadToastId });
       } else {
         toast.success("Importação concluída com sucesso!", { id: uploadToastId });
+        markCompanyStale(selectedCompanyId);
+        setActionHint(selectedCompanyId, { action: "import", referenceMonth });
       }
       const newBatchId = data.batchId ?? null;
       if (newBatchId) {
@@ -263,6 +266,9 @@ export default function ImportsPage() {
         return;
       }
       toast.success("Import excluído com sucesso.", { id: deleteToastId });
+      const deletedMonth = batches.find((b) => b.id === batchId)?.referenceMonth ?? "";
+      markCompanyStale(selectedCompanyId);
+      if (deletedMonth) setActionHint(selectedCompanyId, { action: "delete", referenceMonth: deletedMonth });
       if (expandedBatchId === batchId) setExpandedBatchId(null);
       setBatchSummaries((prev) => { const next = { ...prev }; delete next[batchId]; return next; });
       await loadBatches(selectedCompanyId);
@@ -320,6 +326,9 @@ export default function ImportsPage() {
               idx === i ? { ...r, status: "done", message: "Importado com sucesso." } : r,
             ),
           );
+          markCompanyStale(selectedCompanyId);
+          const detectedMonth = batchFileResults[i]?.detectedMonth;
+          if (detectedMonth) setActionHint(selectedCompanyId, { action: "import", referenceMonth: detectedMonth });
         }
       } catch {
         setBatchFileResults((prev) =>

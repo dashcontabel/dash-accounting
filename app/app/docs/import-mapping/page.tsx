@@ -10,7 +10,7 @@ type MeResponse = {
   user?: { id: string; email: string; role: "ADMIN" | "CLIENT" };
 };
 
-type Section = "negocio" | "funcional" | "formato" | "tecnico";
+type Section = "negocio" | "funcional" | "operacoes" | "formato" | "tecnico";
 
 const SECTIONS: { id: Section; label: string; shortLabel: string; icon: React.ReactNode }[] = [
   {
@@ -30,6 +30,16 @@ const SECTIONS: { id: Section; label: string; shortLabel: string; icon: React.Re
     icon: (
       <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
         <path strokeLinecap="round" strokeLinejoin="round" d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" />
+      </svg>
+    ),
+  },
+  {
+    id: "operacoes",
+    label: "Operações",
+    shortLabel: "Operações",
+    icon: (
+      <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
       </svg>
     ),
   },
@@ -135,6 +145,7 @@ export default function ImportMappingDocsPage() {
       .then((r) => r.json())
       .then((data: MeResponse) => {
         if (!data.user) { router.push("/login"); return; }
+        if (data.user.role !== "ADMIN") { router.replace("/"); return; }
         setMe(data.user);
       })
       .catch(() => router.push("/login"));
@@ -384,6 +395,157 @@ export default function ImportMappingDocsPage() {
               Você pode visualizá-las no detalhe de cada import (botão <em>Ver detalhes</em>).
               Use essa lista para identificar contas que precisam ser adicionadas aos mapeamentos.
             </InfoBox>
+          </div>
+        )}
+
+        {/* ── Operações ── */}
+        {active === "operacoes" && (
+          <div className="space-y-6">
+
+            <div className="rounded-2xl border border-[--border] bg-[--surface] p-6">
+              <SectionTitle>Operações de importação</SectionTitle>
+              <p className="mt-2 text-sm text-[--text-muted]">
+                O sistema oferece três modos de importação e as operações de exclusão e recálculo.
+                Todas as ações são restritas ao role <Badge color="red">ADMIN</Badge>.
+              </p>
+            </div>
+
+            {/* Import único */}
+            <div className="rounded-xl border border-[--border] bg-[--surface] p-6 space-y-3">
+              <div className="flex items-center gap-2">
+                <Badge color="blue">1</Badge>
+                <h3 className="text-sm font-semibold text-foreground">Import único</h3>
+              </div>
+              <p className="text-sm text-[--text-muted]">
+                Upload de um único arquivo XLSX para uma empresa e mês específicos.
+                Você escolhe a empresa, o mês de referência e o arquivo.
+              </p>
+              <div className="mt-2 grid gap-3 sm:grid-cols-2">
+                <div className="rounded-xl border border-[--border] bg-[--surface-2] p-4">
+                  <p className="text-xs font-semibold text-foreground">Mês de referência</p>
+                  <p className="mt-1 text-sm text-[--text-muted]">
+                    Pode ser informado manualmente ou detectado automaticamente do cabeçalho do arquivo.
+                    O campo do formulário tem prioridade sobre o valor do arquivo.
+                  </p>
+                </div>
+                <div className="rounded-xl border border-[--border] bg-[--surface-2] p-4">
+                  <p className="text-xs font-semibold text-foreground">Resultado inline</p>
+                  <p className="mt-1 text-sm text-[--text-muted]">
+                    Após a importação, o resumo calculado (KPIs) é exibido diretamente no card do import.
+                    Clique em <em>Ver detalhes</em> para ver contas não mapeadas.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* Import em lote */}
+            <div className="rounded-xl border border-[--border] bg-[--surface] p-6 space-y-3">
+              <div className="flex items-center gap-2">
+                <Badge color="purple">2</Badge>
+                <h3 className="text-sm font-semibold text-foreground">Import em lote</h3>
+              </div>
+              <p className="text-sm text-[--text-muted]">
+                Permite enviar até <strong className="text-foreground">12 arquivos de uma vez</strong> para a mesma empresa.
+                Ideal para preencher vários meses do histórico de uma só vez.
+                O mês de referência é detectado automaticamente do cabeçalho de cada arquivo — não é possível informar manualmente no modo lote.
+              </p>
+              <InfoBox title="Como usar o import em lote" color="blue">
+                <ol className="ml-4 mt-1 list-decimal space-y-1">
+                  <li>Ative a opção <strong>Importar em lote</strong> na tela de Importações.</li>
+                  <li>Selecione até 12 arquivos XLSX de uma vez.</li>
+                  <li>Clique em <strong>Importar todos</strong>. Cada arquivo é processado sequencialmente.</li>
+                  <li>O resultado de cada arquivo é exibido individualmente (sucesso, aviso ou erro).</li>
+                </ol>
+              </InfoBox>
+              <div className="grid gap-3 sm:grid-cols-2 mt-2">
+                <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 dark:border-emerald-800/40 dark:bg-emerald-950/20">
+                  <p className="text-xs font-semibold text-emerald-700 dark:text-emerald-300">Arquivo processado com sucesso</p>
+                  <p className="mt-1 text-sm text-emerald-700 dark:text-emerald-300">Exibido com ✓ e "Importado com sucesso."</p>
+                </div>
+                <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 dark:border-amber-800/40 dark:bg-amber-950/20">
+                  <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">Arquivo já importado (mesmo conteúdo)</p>
+                  <p className="mt-1 text-sm text-amber-700 dark:text-amber-300">Exibido com aviso — o sistema reaplica os mapeamentos sem criar duplicata.</p>
+                </div>
+              </div>
+            </div>
+
+            {/* Excluir import */}
+            <div className="rounded-xl border border-[--border] bg-[--surface] p-6 space-y-3">
+              <div className="flex items-center gap-2">
+                <Badge color="red">3</Badge>
+                <h3 className="text-sm font-semibold text-foreground">Excluir um import</h3>
+              </div>
+              <p className="text-sm text-[--text-muted]">
+                A exclusão de um import remove permanentemente o batch, todas as suas{" "}
+                <strong className="text-foreground">entradas contábeis</strong> (LedgerEntry) e as{" "}
+                <strong className="text-foreground">contas não mapeadas</strong> (UnmappedAccount).
+                Se for o último import do mês para aquela empresa, o{" "}
+                <strong className="text-foreground">resumo do dashboard</strong> (DashboardMonthlySummary) também é removido.
+              </p>
+              <div className="rounded-xl border border-red-200 bg-red-50 p-4 dark:border-red-800/40 dark:bg-red-950/20">
+                <p className="text-xs font-semibold text-red-700 dark:text-red-300">Ação irreversível</p>
+                <p className="mt-1 text-sm text-red-700 dark:text-red-300">
+                  A exclusão não pode ser desfeita. Após excluir, o mês ficará sem dados no dashboard.
+                  Para restaurar, reimporte o arquivo.
+                </p>
+              </div>
+              <InfoBox title="Quando excluir?" color="amber">
+                Use a exclusão quando precisar <strong>corrigir dados de um mês já importado</strong> com um arquivo diferente.
+                O sistema bloqueia a reimportação de um arquivo diferente para o mesmo mês enquanto o import original existir —
+                exclua o import existente primeiro, depois reimporte o arquivo correto.
+              </InfoBox>
+            </div>
+
+            {/* Recalcular */}
+            <div className="rounded-xl border border-[--border] bg-[--surface] p-6 space-y-3">
+              <div className="flex items-center gap-2">
+                <Badge color="amber">4</Badge>
+                <h3 className="text-sm font-semibold text-foreground">Recalcular resumo</h3>
+              </div>
+              <p className="text-sm text-[--text-muted]">
+                O botão <strong className="text-foreground">Recalcular</strong> no dashboard reaplica os mapeamentos atuais
+                sobre os dados já importados de um mês específico, atualizando o{" "}
+                <strong className="text-foreground">DashboardMonthlySummary</strong> sem precisar reimportar o arquivo.
+              </p>
+              <InfoBox title="Quando usar?" color="blue">
+                Use o recálculo após <strong>alterar mapeamentos de conta</strong>. O recálculo
+                reflete imediatamente as novas regras nos KPIs do dashboard sem a necessidade de
+                excluir e reimportar o arquivo.
+              </InfoBox>
+            </div>
+
+            {/* Notificações em tempo real */}
+            <div className="rounded-xl border border-[--border] bg-[--surface] p-6 space-y-4">
+              <div className="flex items-center gap-2">
+                <Badge color="indigo">5</Badge>
+                <h3 className="text-sm font-semibold text-foreground">Notificações em tempo real</h3>
+              </div>
+              <p className="text-sm text-[--text-muted]">
+                Após qualquer operação (import, exclusão ou recálculo), o dashboard detecta automaticamente a mudança
+                e notifica todos os usuários que têm acesso à empresa afetada — incluindo usuários CLIENT que estão
+                visualizando o dashboard em tempo real.
+              </p>
+              <div className="grid gap-3 sm:grid-cols-3 mt-2">
+                {[
+                  { badge: "blue" as const, label: "Import", desc: "Novo balancete importado · <Mês/Ano> — exibido no sino de notificações." },
+                  { badge: "red" as const, label: "Exclusão", desc: "Balancete de <Mês/Ano> excluído — notificação e badge de desatualizado ativados." },
+                  { badge: "amber" as const, label: "Recálculo", desc: "Dados recalculados · <Mês/Ano> — dashboard atualiza no próximo ciclo de polling (30 s)." },
+                ].map((item) => (
+                  <div key={item.label} className="rounded-xl border border-[--border] bg-[--surface-2] p-4">
+                    <Badge color={item.badge}>{item.label}</Badge>
+                    <p className="mt-2 text-sm text-[--text-muted]">{item.desc}</p>
+                  </div>
+                ))}
+              </div>
+              <InfoBox title="Mecanismo de detecção" color="blue">
+                O dashboard faz polling a cada <strong>30 segundos</strong> no endpoint{" "}
+                <code className="rounded bg-[--surface] px-1 text-xs">/api/dashboard/freshness</code>.
+                Quando detecta que os dados mudaram, exibe o badge <strong>Desatualizado · Sincronizar</strong>
+                e adiciona uma notificação no sino. O usuário pode clicar em <strong>Sincronizar</strong> para
+                recarregar os dados imediatamente.
+              </InfoBox>
+            </div>
+
           </div>
         )}
 
@@ -722,6 +884,8 @@ export default function ImportMappingDocsPage() {
                   { method: "POST",   route: "/api/imports/xlsx",         desc: "Recebe o arquivo, valida, persiste e aplica mapeamentos",              auth: "ADMIN" },
                   { method: "GET",    route: "/api/imports",               desc: "Lista os ImportBatch de uma empresa (paginado por companyId)",       auth: "ALL"   },
                   { method: "GET",    route: "/api/imports/[id]",          desc: "Detalhe de um batch: contas não mapeadas + resumo calculado",         auth: "ALL"   },
+                  { method: "DELETE", route: "/api/imports/[id]",          desc: "Exclui batch em cascata (LedgerEntry, UnmappedAccount, Summary se único); bump Company.updatedAt", auth: "ADMIN" },
+                  { method: "GET",    route: "/api/dashboard/freshness",    desc: "Retorna updatedAt e último batch por empresa — polling de notificações do dashboard", auth: "ALL"   },
                   { method: "GET",    route: "/api/admin/mappings",        desc: "Lista todas as regras de mapeamento",                                auth: "ADMIN" },
                   { method: "POST",   route: "/api/admin/mappings",        desc: "Cria nova regra de mapeamento",                                      auth: "ADMIN" },
                   { method: "PATCH",  route: "/api/admin/mappings/[id]",   desc: "Atualiza códigos, tipo ou fórmula de uma regra",                     auth: "ADMIN" },
@@ -754,6 +918,8 @@ export default function ImportMappingDocsPage() {
                       { method: "POST", route: "/api/imports/xlsx", desc: "Recebe o arquivo, valida, persiste e aplica mapeamentos", auth: "ADMIN" },
                       { method: "GET", route: "/api/imports", desc: "Lista os ImportBatch de uma empresa (paginado por companyId)", auth: "ALL" },
                       { method: "GET", route: "/api/imports/[id]", desc: "Detalhe de um batch: contas não mapeadas + resumo calculado", auth: "ALL" },
+                      { method: "DELETE", route: "/api/imports/[id]", desc: "Exclui batch em cascata (LedgerEntry, UnmappedAccount, Summary se único); bump Company.updatedAt", auth: "ADMIN" },
+                      { method: "GET", route: "/api/dashboard/freshness", desc: "Retorna updatedAt e último batch por empresa — polling de notificações do dashboard", auth: "ALL" },
                       { method: "GET", route: "/api/admin/mappings", desc: "Lista todas as regras de mapeamento", auth: "ADMIN" },
                       { method: "POST", route: "/api/admin/mappings", desc: "Cria nova regra de mapeamento", auth: "ADMIN" },
                       { method: "PATCH", route: "/api/admin/mappings/[id]", desc: "Atualiza códigos, tipo ou fórmula de uma regra", auth: "ADMIN" },

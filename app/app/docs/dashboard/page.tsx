@@ -10,7 +10,7 @@ type MeResponse = {
   user?: { id: string; email: string; role: "ADMIN" | "CLIENT" };
 };
 
-type Section = "visao-geral" | "filtros" | "graficos" | "heatmap";
+type Section = "visao-geral" | "filtros" | "graficos" | "heatmap" | "sincronizacao";
 
 const SECTIONS: { id: Section; label: string; shortLabel: string; icon: React.ReactNode }[] = [
   {
@@ -50,6 +50,16 @@ const SECTIONS: { id: Section; label: string; shortLabel: string; icon: React.Re
     icon: (
       <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
         <path strokeLinecap="round" strokeLinejoin="round" d="M4 5a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1H5a1 1 0 01-1-1V5zm10 0a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1h-4a1 1 0 01-1-1V5zM4 15a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1H5a1 1 0 01-1-1v-4zm10 0a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1h-4a1 1 0 01-1-1v-4z" />
+      </svg>
+    ),
+  },
+  {
+    id: "sincronizacao",
+    label: "Sincronização",
+    shortLabel: "Sincronização",
+    icon: (
+      <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
       </svg>
     ),
   },
@@ -860,6 +870,152 @@ export default function DashboardDocsPage() {
               em determinadas empresas. Depois, use o filtro para focar naquela empresa e naquele mês específico
               para aprofundar a análise nos demais gráficos.
             </InfoBox>
+          </div>
+        )}
+
+        {/* ── Sincronização & Notificações ── */}
+        {active === "sincronizacao" && (
+          <div className="space-y-6">
+
+            <div className="rounded-2xl border border-[--border] bg-[--surface] p-6">
+              <SectionTitle>Sincronização em tempo real</SectionTitle>
+              <p className="mt-3 text-sm text-[--text-muted] leading-relaxed">
+                O dashboard verifica automaticamente a cada <strong className="text-foreground">30 segundos</strong> se
+                os dados de alguma empresa foram atualizados. Quando detecta uma mudança, exibe um{" "}
+                <strong className="text-foreground">badge de desatualizado</strong> e registra uma{" "}
+                <strong className="text-foreground">notificação</strong> no sino — sem precisar recarregar a página.
+              </p>
+            </div>
+
+            {/* DataFreshnessBadge */}
+            <div className="rounded-xl border border-[--border] bg-[--surface] p-6 space-y-4">
+              <div className="flex items-center gap-2">
+                <Badge color="emerald">Badge de status</Badge>
+                <h3 className="text-sm font-semibold text-foreground">Badge de atualização de dados</h3>
+              </div>
+              <p className="text-sm text-[--text-muted]">
+                Aparece no topo do dashboard quando o sistema detecta que os dados foram modificados após o último carregamento.
+              </p>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 dark:border-emerald-800/40 dark:bg-emerald-950/20">
+                  <p className="text-xs font-semibold text-emerald-700 dark:text-emerald-300">✓ Sincronizado</p>
+                  <p className="mt-1 text-sm text-emerald-700 dark:text-emerald-300">
+                    Badge verde. Os dados exibidos estão atualizados com o servidor.
+                  </p>
+                </div>
+                <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 dark:border-amber-800/40 dark:bg-amber-950/20">
+                  <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">⚠ Desatualizado · Sincronizar</p>
+                  <p className="mt-1 text-sm text-amber-700 dark:text-amber-300">
+                    Badge âmbar clicável. Indica que alguém importou, excluiu ou recalculou dados.
+                    Clique para recarregar o dashboard imediatamente.
+                  </p>
+                </div>
+              </div>
+              <InfoBox title="Como funciona o Sincronizar?" color="blue">
+                Clicar em <strong>Sincronizar</strong> invalida o cache local e busca os dados atualizados do servidor.
+                O badge volta para <strong>Sincronizado</strong> após a recarga.
+              </InfoBox>
+            </div>
+
+            {/* NotificationsBell */}
+            <div className="rounded-xl border border-[--border] bg-[--surface] p-6 space-y-4">
+              <div className="flex items-center gap-2">
+                <Badge color="blue">Notificações</Badge>
+                <h3 className="text-sm font-semibold text-foreground">Sino de notificações</h3>
+              </div>
+              <p className="text-sm text-[--text-muted]">
+                O sino de notificações fica no canto superior direito da barra do dashboard.
+                Um <strong className="text-foreground">badge vermelho</strong> mostra a quantidade de notificações não lidas.
+              </p>
+              <div className="grid gap-3 sm:grid-cols-2 mt-2">
+                <div className="rounded-xl border border-[--border] bg-[--surface-2] p-4">
+                  <p className="text-xs font-semibold text-foreground">Não lidas (padrão)</p>
+                  <p className="mt-1 text-sm text-[--text-muted]">
+                    Ao abrir o sino, apenas as notificações não lidas são exibidas. Cada item mostra:
+                    empresa, descrição da ação e tempo relativo (ex: &ldquo;há 2 min&rdquo;).
+                  </p>
+                </div>
+                <div className="rounded-xl border border-[--border] bg-[--surface-2] p-4">
+                  <p className="text-xs font-semibold text-foreground">Histórico</p>
+                  <p className="mt-1 text-sm text-[--text-muted]">
+                    Clique em <em>Ver histórico</em> para ver também as notificações já lidas.
+                    O rodapé indica quantas notificações já foram lidas.
+                  </p>
+                </div>
+              </div>
+              <div className="mt-3 space-y-2">
+                <p className="text-xs font-semibold uppercase tracking-wide text-[--text-muted]">Ações disponíveis</p>
+                <div className="grid gap-2 sm:grid-cols-3">
+                  {[
+                    { label: "✓ Marcar como lida", desc: "Clique no ícone de check em uma notificação para marcá-la como lida individualmente." },
+                    { label: "Marcar todas como lidas", desc: "Botão no topo do dropdown para marcar todas as notificações como lidas de uma vez." },
+                    { label: "Ver histórico / Ocultar", desc: "Alterna entre exibir apenas não lidas e exibir todo o histórico de notificações." },
+                  ].map((item) => (
+                    <div key={item.label} className="rounded-xl border border-[--border] bg-[--surface-2] p-3">
+                      <p className="text-xs font-semibold text-foreground">{item.label}</p>
+                      <p className="mt-1 text-xs text-[--text-muted]">{item.desc}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            {/* O que dispara uma notificação */}
+            <div className="rounded-xl border border-[--border] bg-[--surface] p-6 space-y-4">
+              <h3 className="text-sm font-semibold text-foreground">O que dispara uma notificação?</h3>
+              <p className="text-sm text-[--text-muted]">
+                Qualquer operação que mude os dados de uma empresa gera uma notificação para <strong className="text-foreground">todos os usuários</strong> com
+                acesso àquela empresa — incluindo usuários CLIENT visualizando o dashboard em outro browser.
+              </p>
+              <div className="mt-2 hidden sm:block overflow-hidden rounded-xl border border-[--border]">
+                <table className="min-w-full text-sm">
+                  <thead className="border-b border-[--border] bg-[--surface-2] text-xs font-medium uppercase tracking-wide text-[--text-muted]">
+                    <tr>
+                      <th className="px-4 py-3 text-left">Operação</th>
+                      <th className="px-4 py-3 text-left">Mensagem na notificação</th>
+                      <th className="px-4 py-3 text-left">Quem realiza</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-[--border]">
+                    <tr className="bg-[--surface]">
+                      <td className="px-4 py-3"><Badge color="blue">Import</Badge></td>
+                      <td className="px-4 py-3 text-[--text-muted]">Novo balancete importado · &lt;Mês/Ano&gt;</td>
+                      <td className="px-4 py-3"><Badge color="red">ADMIN</Badge></td>
+                    </tr>
+                    <tr className="bg-[--surface-2]">
+                      <td className="px-4 py-3"><Badge color="red">Exclusão</Badge></td>
+                      <td className="px-4 py-3 text-[--text-muted]">Balancete de &lt;Mês/Ano&gt; excluído</td>
+                      <td className="px-4 py-3"><Badge color="red">ADMIN</Badge></td>
+                    </tr>
+                    <tr className="bg-[--surface]">
+                      <td className="px-4 py-3"><Badge color="amber">Recálculo</Badge></td>
+                      <td className="px-4 py-3 text-[--text-muted]">Dados recalculados · &lt;Mês/Ano&gt;</td>
+                      <td className="px-4 py-3"><Badge color="red">ADMIN</Badge></td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+              <div className="mt-2 space-y-2 sm:hidden">
+                {[
+                  { badge: "blue" as const, op: "Import", msg: "Novo balancete importado · <Mês/Ano>" },
+                  { badge: "red" as const, op: "Exclusão", msg: "Balancete de <Mês/Ano> excluído" },
+                  { badge: "amber" as const, op: "Recálculo", msg: "Dados recalculados · <Mês/Ano>" },
+                ].map((item) => (
+                  <div key={item.op} className="rounded-xl border border-[--border] bg-[--surface-2] p-3 space-y-1">
+                    <Badge color={item.badge}>{item.op}</Badge>
+                    <p className="text-xs text-[--text-muted]">{item.msg} — realizado por <Badge color="red">ADMIN</Badge></p>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Empresas monitoradas */}
+            <InfoBox title="Quais empresas são monitoradas?" color="blue">
+              O sistema monitora <strong>todas as empresas</strong> que o seu usuário tem acesso —
+              não apenas a empresa selecionada no filtro. Se outra empresa for atualizada enquanto
+              você está visualizando outra, a notificação ainda será exibida.
+            </InfoBox>
+
           </div>
         )}
 

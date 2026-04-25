@@ -74,7 +74,7 @@ export default function LoginForm() {
 
           {/* Email */}
           <div>
-            <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
+            <label htmlFor="email" className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
               Email
             </label>
             <div className="relative">
@@ -84,6 +84,7 @@ export default function LoginForm() {
                 </svg>
               </span>
               <input
+                id="email"
                 required
                 type="email"
                 autoComplete="email"
@@ -97,7 +98,7 @@ export default function LoginForm() {
 
           {/* Password */}
           <div>
-            <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
+            <label htmlFor="password" className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
               Senha
             </label>
             <div className="relative">
@@ -107,6 +108,7 @@ export default function LoginForm() {
                 </svg>
               </span>
               <input
+                id="password"
                 required
                 type={showPassword ? "text" : "password"}
                 autoComplete="current-password"

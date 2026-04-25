@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import {
   BarChart,
@@ -22,7 +23,10 @@ import {
 import AppShell from "./components/app-shell";
 import MultiCompanySelect from "./components/multi-company-select";
 import PeriodFilter from "./components/period-filter";
-import HeatmapChart from "./components/heatmap-chart";
+import NotificationsBell from "./components/notifications-bell";
+import DataFreshnessBadge from "./components/data-freshness-badge";
+// Heavy chart — loaded only on the client to reduce server bundle size
+const HeatmapChart = dynamic(() => import("./components/heatmap-chart"), { ssr: false });
 import { useTheme } from "./components/theme-provider";
 import {
   aggregateSummaries,
@@ -31,6 +35,9 @@ import {
   type PeriodGranularity,
   type MonthlySummary,
 } from "@/lib/dashboard/periods";
+import { companyDataCache, consumeStaleCompanyIds, markCompanyStale } from "@/lib/dashboard/cache";
+import { useDashboardFreshness } from "@/lib/dashboard/freshness";
+import type { CompanyData } from "@/lib/dashboard/types";
 
 type MeResponse = {
   user?: {
@@ -46,12 +53,6 @@ type MeResponse = {
 };
 
 type DashboardData = Record<string, number>;
-
-type CompanyData = {
-  companyId: string;
-  companyName: string;
-  summaries: MonthlySummary[];
-};
 
 const MONTH_LABELS: Record<string, string> = {
   "01": "Jan", "02": "Fev", "03": "Mar", "04": "Abr",
@@ -195,6 +196,25 @@ export default function Home() {
   const [recalcMsg, setRecalcMsg] = useState<string | null>(null);
   const [seeding, setSeeding] = useState(false);
   const [filtersOpen, setFiltersOpen] = useState(true);
+  const [isSyncing, setIsSyncing] = useState(false);
+
+  // ── Freshness polling + notifications ──────────────────────────────────────
+
+  const {
+    staleCompanyIds,
+    notifications,
+    unreadCount,
+    markRead,
+    markAllRead,
+    clearStale,
+    refreshBaseline,
+  } = useDashboardFreshness({
+    // Poll ALL accessible companies, not just selected ones, so users get
+    // notified about any company they have access to.
+    companyIds: allowedCompanies.map((c) => c.id),
+    companiesData,
+    allCompanies: allowedCompanies,
+  });
 
   // ── Auth & company list ──────────────────────────────────────────────────
 
@@ -202,6 +222,11 @@ export default function Home() {
     let isMounted = true;
 
     async function loadMe() {
+      // Evict any companies flagged as stale by the imports page (import/delete).
+      for (const id of consumeStaleCompanyIds()) {
+        companyDataCache.delete(id);
+      }
+
       try {
         const response = await fetch("/api/auth/me", { cache: "no-store" });
         const data = (await response.json()) as MeResponse;
@@ -234,31 +259,39 @@ export default function Home() {
 
   const loadSummaries = useCallback(async (ids: string[]) => {
     if (ids.length === 0) { setCompaniesData([]); return; }
-    setLoadingSummary(true);
-    try {
-      const params = new URLSearchParams();
-      for (const id of ids) params.append("companyId", id);
-      const res = await fetch(`/api/dashboard/summary?${params.toString()}`, { cache: "no-store" });
-      if (res.ok) {
-        const body = (await res.json()) as { companies: CompanyData[] };
-        // Normalize referenceMonth from ISO DateTime ("YYYY-MM-01T00:00:00.000Z") to "YYYY-MM"
-        setCompaniesData(
-          body.companies.map((c) => ({
-            ...c,
-            summaries: c.summaries.map((s) => ({
-              ...s,
-              referenceMonth: s.referenceMonth.slice(0, 7),
-            })),
-          }))
-        );
-      } else {
-        setCompaniesData([]);
+
+    // Only fetch companies that are not yet in the module-level cache.
+    const missingIds = ids.filter((id) => !companyDataCache.has(id));
+
+    if (missingIds.length > 0) {
+      setLoadingSummary(true);
+      try {
+        const params = new URLSearchParams();
+        for (const id of missingIds) params.append("companyId", id);
+        const res = await fetch(`/api/dashboard/summary?${params.toString()}`);
+        if (res.ok) {
+          const body = (await res.json()) as { companies: CompanyData[] };
+          for (const c of body.companies) {
+            companyDataCache.set(c.companyId, {
+              ...c,
+              // Normalize referenceMonth from ISO DateTime ("YYYY-MM-01T00:00:00.000Z") to "YYYY-MM"
+              summaries: c.summaries.map((s) => ({
+                ...s,
+                referenceMonth: s.referenceMonth.slice(0, 7),
+              })),
+            });
+          }
+        }
+      } catch {
+        // non-fatal: companies not added to cache will simply be absent from the view
+      } finally {
+        setLoadingSummary(false);
       }
-    } catch {
-      setCompaniesData([]);
-    } finally {
-      setLoadingSummary(false);
     }
+
+    setCompaniesData(
+      ids.map((id) => companyDataCache.get(id)).filter(Boolean) as CompanyData[],
+    );
   }, []);
 
   useEffect(() => {
@@ -542,6 +575,12 @@ export default function Home() {
               : cd,
           ),
         );
+        // Evict from module-level cache and mark stale so any future navigation
+        // to this page also fetches fresh data for this company.
+        companyDataCache.delete(companyId);
+        markCompanyStale(companyId);
+        // Advance baseline so the freshness poller doesn't false-positive on the next cycle
+        refreshBaseline(companyId);
         setRecalcMsg("Recalculado com sucesso.");
       } else {
         setRecalcMsg(body.error ?? "Erro ao recalcular.");
@@ -555,6 +594,15 @@ export default function Home() {
 
   // ── Render ───────────────────────────────────────────────────────────────
 
+  async function handleSync() {
+    setIsSyncing(true);
+    // Evict stale companies from cache so loadSummaries fetches fresh data
+    for (const id of staleCompanyIds) companyDataCache.delete(id);
+    await loadSummaries(selectedCompanyIds);
+    clearStale();
+    setIsSyncing(false);
+  }
+
   // Stale data warning only applies to single-company monthly view
   const isStale =
     !isMultiCompany &&
@@ -564,6 +612,23 @@ export default function Home() {
 
   return (
     <AppShell role={userRole} email={userEmail} onLogout={handleLogout}>
+
+      {/* ── Toolbar: freshness + notifications ── */}
+      {selectedCompanyIds.length > 0 && (
+        <div className="mb-4 flex items-center justify-end gap-2">
+          <DataFreshnessBadge
+            isStale={staleCompanyIds.length > 0}
+            isSyncing={isSyncing}
+            onSync={() => void handleSync()}
+          />
+          <NotificationsBell
+            notifications={notifications}
+            unreadCount={unreadCount}
+            onMarkRead={markRead}
+            onMarkAllRead={markAllRead}
+          />
+        </div>
+      )}
 
       {/* ── Filter bar ── */}
       <div className="mb-6 rounded-2xl border border-zinc-100 bg-zinc-50/80 shadow-sm dark:border-zinc-700/50 dark:bg-zinc-800/50">

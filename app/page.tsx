@@ -103,16 +103,16 @@ function KpiCard({
 }) {
   const c = COLOR_MAP[color];
   return (
-    <article className={`group rounded-2xl border p-5 transition-shadow hover:shadow-md ${c.card}`}>
+    <article className={`group min-w-0 rounded-2xl border p-5 transition-shadow hover:shadow-md ${c.card}`}>
       <div className="flex items-start justify-between gap-2">
-        <p className="text-xs font-semibold uppercase tracking-wider text-zinc-500 dark:text-zinc-400">{label}</p>
+        <p className="min-w-0 text-xs font-semibold uppercase leading-tight tracking-wider text-zinc-500 dark:text-zinc-400">{label}</p>
         {icon && (
           <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-xl ${c.icon}`}>
             {icon}
           </span>
         )}
       </div>
-      <p className={`mt-3 text-xl font-bold ${c.value}`}>{formatCurrency(value)}</p>
+      <p className={`mt-3 min-w-0 truncate text-sm font-bold sm:text-base ${c.value}`}>{formatCurrency(value)}</p>
       {sub ? <p className="mt-1.5 text-[11px] text-zinc-400 dark:text-zinc-500">{sub}</p> : null}
     </article>
   );
@@ -840,7 +840,7 @@ export default function Home() {
                 : "border-red-200 bg-red-50 dark:border-red-800/50 dark:bg-red-950/40"
             }`}>
               <p className="text-[11px] font-bold uppercase tracking-widest text-zinc-400 dark:text-zinc-500">Resultado do Período</p>
-              <p className={`mt-2 text-3xl font-extrabold ${
+              <p className={`mt-2 min-w-0 truncate text-xl font-extrabold sm:text-2xl ${
                 get(d, "RESULTADO") >= 0 ? "text-emerald-700 dark:text-emerald-400" : "text-red-700 dark:text-red-400"
               }`}>
                 {formatCurrency(get(d, "RESULTADO"))}
@@ -1067,10 +1067,10 @@ export default function Home() {
                     color: get(d, "FATURAMENTO") - get(d, "NFS_RECEBIDAS") >= 0 ? "text-amber-600 dark:text-amber-400" : "text-red-600 dark:text-red-400",
                   },
                 ].map(({ label, value, color }) => (
-                  <div key={label} className="flex items-center rounded-xl border border-emerald-100 bg-white/80 px-4 py-3 dark:border-emerald-900/30 dark:bg-zinc-800/50">
-                    <div>
+                  <div key={label} className="min-w-0 flex items-center rounded-xl border border-emerald-100 bg-white/80 px-4 py-3 dark:border-emerald-900/30 dark:bg-zinc-800/50">
+                    <div className="min-w-0">
                       <p className="text-xs text-zinc-400 dark:text-zinc-500">{label}</p>
-                      <p className={`mt-0.5 text-base font-bold ${color}`}>{formatCurrency(value)}</p>
+                      <p className={`mt-0.5 truncate text-xs font-bold sm:text-sm ${color}`}>{formatCurrency(value)}</p>
                     </div>
                   </div>
                 ))}
@@ -1110,7 +1110,7 @@ export default function Home() {
           </div>
 
           {/* ══ BOTTOM ROW ══ */}
-          <div className="mt-4 grid gap-4 lg:grid-cols-3">
+          <div className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
             {/* Saldo Bancário */}
             <div className="rounded-2xl border border-purple-200 bg-purple-500/10 p-5 dark:border-purple-900/30 dark:bg-purple-950/10">
               <div className="mb-3 flex items-center gap-2">
@@ -1131,7 +1131,7 @@ export default function Home() {
                 </span>
                 <h3 className="text-xs font-bold uppercase tracking-widest text-zinc-400 dark:text-zinc-500">Rendimento Passivo</h3>
               </div>
-              <div className="grid gap-3 sm:grid-cols-2">
+              <div className="grid gap-3">
                 <KpiCard label="Rentabilidade" value={get(d, "RENTABILIDADE")} color="teal"
                   sub="Rend. bruto − IOF/IRRF" icon={Icons.trending} />
                 <KpiCard label="Aluguel Líquido" value={get(d, "ALUGUEL_LIQUIDO")} color="teal"

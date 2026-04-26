@@ -76,7 +76,7 @@ export default function RootLayout({
         {/* PWA service worker registration */}
         <script
           dangerouslySetInnerHTML={{
-            __html: `if('serviceWorker' in navigator){window.addEventListener('load',function(){navigator.serviceWorker.register('/sw.js');});}`,
+            __html: `if('serviceWorker' in navigator){window.addEventListener('load',function(){navigator.serviceWorker.register('/sw.js').then(function(reg){reg.addEventListener('updatefound',function(){var newSW=reg.installing;if(!newSW)return;newSW.addEventListener('statechange',function(){if(newSW.state==='activated'){}});});});navigator.serviceWorker.addEventListener('message',function(e){if(e.data&&e.data.type==='SW_UPDATED'){window.location.reload();}});});}`,
           }}
         />
       </head>

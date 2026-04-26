@@ -1,7 +1,9 @@
-const CACHE_NAME = "dash-barros-e-sa-v1";
+// Bump this version whenever you deploy a new build so stale caches are purged.
+const CACHE_NAME = "dash-barros-e-sa-v2";
+
+// Only truly static, versioned assets should be pre-cached.
+// Never include HTML pages here — they are server-rendered and auth-aware.
 const STATIC_ASSETS = [
-  "/",
-  "/app/dashboard",
   "/icons/icon-192x192.png",
   "/icons/icon-512x512.png",
 ];
@@ -15,11 +17,24 @@ self.addEventListener("install", (event) => {
 
 self.addEventListener("activate", (event) => {
   event.waitUntil(
-    caches.keys().then((keys) =>
-      Promise.all(
-        keys.filter((key) => key !== CACHE_NAME).map((key) => caches.delete(key))
+    caches
+      .keys()
+      .then((keys) =>
+        Promise.all(
+          keys.filter((key) => key !== CACHE_NAME).map((key) => caches.delete(key))
+        )
       )
-    )
+      .then(() =>
+        // After purging stale caches, tell every open window to reload so it
+        // immediately runs under the new SW instead of the old one.
+        self.clients
+          .matchAll({ type: "window", includeUncontrolled: true })
+          .then((clients) =>
+            clients.forEach((client) =>
+              client.postMessage({ type: "SW_UPDATED" })
+            )
+          )
+      )
   );
   self.clients.claim();
 });
@@ -28,8 +43,9 @@ self.addEventListener("fetch", (event) => {
   // Only handle GET requests
   if (event.request.method !== "GET") return;
 
-  // Skip API routes and Next.js internals
   const url = new URL(event.request.url);
+
+  // Skip API routes and Next.js internals — let them go straight to the network.
   if (
     url.pathname.startsWith("/api/") ||
     url.pathname.startsWith("/_next/") ||
@@ -38,6 +54,17 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
+  // HTML document requests (navigations) use network-first so that
+  // auth redirects and fresh server responses are always respected.
+  // Fall back to cache only when the network is unavailable.
+  if (event.request.mode === "navigate") {
+    event.respondWith(
+      fetch(event.request).catch(() => caches.match(event.request))
+    );
+    return;
+  }
+
+  // Static assets (images, fonts, etc.) use cache-first for performance.
   event.respondWith(
     caches.match(event.request).then((cached) => {
       if (cached) return cached;

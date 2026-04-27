@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 
 import { requireAdmin } from "@/lib/auth/admin-guard";
+import { AuditAction, writeAuditLog } from "@/lib/audit";
 import { prisma } from "@/lib/prisma";
 
 const patchCompanySchema = z.object({
@@ -49,7 +50,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
 }
 
 export async function PATCH(request: NextRequest, context: RouteContext) {
-  const { errorResponse } = await requireAdmin(request);
+  const { admin, errorResponse } = await requireAdmin(request);
   if (errorResponse) return errorResponse;
   const { id } = await context.params;
 
@@ -85,6 +86,15 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
         isActive: true,
         groupId: true,
       },
+    });
+
+    writeAuditLog({
+      userId: admin!.id,
+      companyId: id,
+      action: AuditAction.COMPANY_UPDATE,
+      entity: "Company",
+      entityId: id,
+      metadata: parsedBody.data as Record<string, unknown>,
     });
 
     return NextResponse.json({ company });

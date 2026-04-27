@@ -12,6 +12,11 @@ vi.mock("@/lib/company-access", () => ({
   assertCompanyAccess: vi.fn(),
 }));
 
+vi.mock("@/lib/audit", () => ({
+  writeAuditLog: vi.fn(),
+  AuditAction: {},
+}));
+
 vi.mock("@/lib/prisma", () => ({
   prisma: {
     user: { findFirst: vi.fn() },

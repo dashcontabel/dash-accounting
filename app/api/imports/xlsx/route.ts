@@ -6,6 +6,7 @@ import { z } from "zod";
 import { getUserFromRequest } from "@/lib/auth";
 import { assertCompanyAccess } from "@/lib/company-access";
 import { prisma } from "@/lib/prisma";
+import { AuditAction, writeAuditLog } from "@/lib/audit";
 import { applyAccountMappings, detectFileFormat, parseXlsxBuffer } from "@/lib/xlsx";
 
 export const runtime = "nodejs";
@@ -324,6 +325,19 @@ export async function POST(request: NextRequest) {
           lastError: null,
         },
       });
+    });
+
+    writeAuditLog({
+      userId: user.id,
+      companyId: parsedForm.data.companyId,
+      action: AuditAction.IMPORT_CREATE,
+      entity: "ImportBatch",
+      entityId: createdBatch.id,
+      metadata: {
+        fileName: file.name,
+        referenceMonth: effectiveMonth,
+        totalRows: parsedWorkbook.rows.length,
+      },
     });
 
     return NextResponse.json(

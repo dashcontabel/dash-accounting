@@ -15,12 +15,17 @@ const createUserSchema = z.object({
   companyIds: z.array(z.string().min(1)).default([]),
 });
 
+const OWNER_EMAIL = "owner@dashcontabil.com";
+
 export async function GET(request: NextRequest) {
-  const { errorResponse } = await requireAdmin(request);
+  const { admin, errorResponse } = await requireAdmin(request);
   if (errorResponse) return errorResponse;
 
   try {
+    const isOwner = admin!.email === OWNER_EMAIL;
+
     const users = await prisma.user.findMany({
+      where: isOwner ? undefined : { NOT: { email: OWNER_EMAIL } },
       orderBy: { createdAt: "desc" },
       select: {
         id: true,

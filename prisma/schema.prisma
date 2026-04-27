@@ -208,3 +208,9 @@ model AuditLog {
   @@index([action])
   @@index([createdAt])
 }
+
+model SystemConfig {
+  key       String   @id
+  value     String
+  updatedAt DateTime @updatedAt
+}

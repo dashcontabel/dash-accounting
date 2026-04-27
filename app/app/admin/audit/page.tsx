@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { Fragment, useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 
 import AppShell from "@/app/components/app-shell";
@@ -90,6 +90,8 @@ export default function AuditLogPage() {
   const [filterFrom, setFilterFrom] = useState("");
   const [filterTo, setFilterTo] = useState("");
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [auditEnabled, setAuditEnabled] = useState<boolean | null>(null);
+  const [isTogglingAudit, setIsTogglingAudit] = useState(false);
 
   async function handleLogout() {
     await fetch("/api/auth/logout", { method: "POST" });
@@ -134,6 +136,13 @@ export default function AuditLogPage() {
         return;
       }
       setMe(data.user);
+
+      // Load audit enabled state
+      const settingsRes = await fetch("/api/admin/audit/settings");
+      if (settingsRes.ok) {
+        const { enabled } = (await settingsRes.json()) as { enabled: boolean };
+        setAuditEnabled(enabled);
+      }
     }
     void checkMe();
   }, [router]);
@@ -154,6 +163,24 @@ export default function AuditLogPage() {
     setPage(1);
   }
 
+  async function handleToggleAudit() {
+    if (auditEnabled === null || isTogglingAudit) return;
+    setIsTogglingAudit(true);
+    try {
+      const res = await fetch("/api/admin/audit/settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ enabled: !auditEnabled }),
+      });
+      if (res.ok) {
+        const { enabled } = (await res.json()) as { enabled: boolean };
+        setAuditEnabled(enabled);
+      }
+    } finally {
+      setIsTogglingAudit(false);
+    }
+  }
+
   if (!me) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-[--background]">
@@ -167,18 +194,40 @@ export default function AuditLogPage() {
       <div className="mx-auto max-w-7xl space-y-6 p-4 sm:p-6 lg:p-8">
 
         {/* Header */}
-        <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div>
             <h1 className="text-2xl font-bold text-zinc-900 dark:text-white">Log de Auditoria</h1>
             <p className="mt-0.5 text-sm text-zinc-500 dark:text-zinc-400">
               Registro de todas as ações críticas realizadas na plataforma
             </p>
           </div>
-          {pagination && (
-            <p className="text-sm text-zinc-500 dark:text-zinc-400">
-              {pagination.total.toLocaleString("pt-BR")} evento{pagination.total !== 1 ? "s" : ""}
-            </p>
-          )}
+          <div className="flex items-center gap-4">
+            {pagination && (
+              <p className="text-sm text-zinc-500 dark:text-zinc-400">
+                {pagination.total.toLocaleString("pt-BR")} evento{pagination.total !== 1 ? "s" : ""}
+              </p>
+            )}
+            {/* Audit toggle */}
+            {auditEnabled !== null && (
+              <button
+                type="button"
+                onClick={() => void handleToggleAudit()}
+                disabled={isTogglingAudit}
+                title={auditEnabled ? "Clique para desativar a auditoria" : "Clique para ativar a auditoria"}
+                className={`flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-semibold transition disabled:opacity-60 ${
+                  auditEnabled
+                    ? "bg-emerald-100 text-emerald-700 hover:bg-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-400 dark:hover:bg-emerald-900/50"
+                    : "bg-red-100 text-red-700 hover:bg-red-200 dark:bg-red-900/30 dark:text-red-400 dark:hover:bg-red-900/50"
+                }`}
+              >
+                {/* Toggle switch icon */}
+                <span className="relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors duration-200" style={{ backgroundColor: auditEnabled ? "#10b981" : "#ef4444" }}>
+                  <span className={`inline-block h-3.5 w-3.5 rounded-full bg-white shadow transition-transform duration-200 ${auditEnabled ? "translate-x-4" : "translate-x-1"}`} />
+                </span>
+                {isTogglingAudit ? "Salvando..." : auditEnabled ? "Auditoria ativa" : "Auditoria pausada"}
+              </button>
+            )}
+          </div>
         </div>
 
         {/* Filters */}
@@ -267,9 +316,8 @@ export default function AuditLogPage() {
                 </thead>
                 <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
                   {logs.map((log) => (
-                    <>
+                    <Fragment key={log.id}>
                       <tr
-                        key={log.id}
                         className="cursor-pointer transition-colors hover:bg-zinc-50 dark:hover:bg-zinc-800/50"
                         onClick={() => setExpandedId(expandedId === log.id ? null : log.id)}
                       >
@@ -313,7 +361,7 @@ export default function AuditLogPage() {
                         </td>
                       </tr>
                       {expandedId === log.id && (
-                        <tr key={`${log.id}-detail`} className="bg-zinc-50 dark:bg-zinc-800/30">
+                        <tr className="bg-zinc-50 dark:bg-zinc-800/30">
                           <td colSpan={5} className="px-6 pb-4 pt-2">
                             <p className="mb-1 text-xs font-semibold uppercase tracking-wider text-zinc-400">Metadata</p>
                             <pre className="overflow-x-auto rounded-xl border border-zinc-200 bg-white p-3 font-mono text-xs text-zinc-700 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300">
@@ -327,7 +375,7 @@ export default function AuditLogPage() {
                           </td>
                         </tr>
                       )}
-                    </>
+                    </Fragment>
                   ))}
                 </tbody>
               </table>

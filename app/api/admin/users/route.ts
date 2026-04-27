@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 
 import { requireAdmin } from "@/lib/auth/admin-guard";
+import { AuditAction, writeAuditLog } from "@/lib/audit";
 import { prisma } from "@/lib/prisma";
 
 const createUserSchema = z.object({
@@ -57,7 +58,7 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
-  const { errorResponse } = await requireAdmin(request);
+  const { admin, errorResponse } = await requireAdmin(request);
   if (errorResponse) return errorResponse;
 
   try {
@@ -126,6 +127,14 @@ export async function POST(request: NextRequest) {
         role: true,
         status: true,
       },
+    });
+
+    writeAuditLog({
+      userId: admin!.id,
+      action: AuditAction.USER_CREATE,
+      entity: "User",
+      entityId: user.id,
+      metadata: { email: user.email, role: user.role },
     });
 
     return NextResponse.json({ user }, { status: 201 });

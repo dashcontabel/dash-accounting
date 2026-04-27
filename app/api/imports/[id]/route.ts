@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 
 import { getUserFromRequest } from "@/lib/auth";
+import { AuditAction, writeAuditLog } from "@/lib/audit";
 import { assertCompanyAccess } from "@/lib/company-access";
 import { prisma } from "@/lib/prisma";
 
@@ -136,6 +137,15 @@ export async function DELETE(request: NextRequest, context: RouteContext) {
     await prisma.company.update({
       where: { id: batch.companyId },
       data: { updatedAt: new Date() },
+    });
+
+    writeAuditLog({
+      userId: user.id,
+      companyId: batch.companyId,
+      action: AuditAction.IMPORT_DELETE,
+      entity: "ImportBatch",
+      entityId: batch.id,
+      metadata: { referenceMonth: batch.referenceMonth },
     });
 
     return new NextResponse(null, { status: 204 });

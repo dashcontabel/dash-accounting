@@ -9,6 +9,7 @@ import {
   signToken,
 } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { AuditAction, writeAuditLog } from "@/lib/audit";
 
 const loginSchema = z.object({
   email: z.string().trim().toLowerCase().email(),
@@ -100,6 +101,14 @@ export async function POST(request: NextRequest) {
       secure: process.env.NODE_ENV === "production",
       path: "/",
       maxAge: 60 * 60 * 24 * 7,
+    });
+
+    writeAuditLog({
+      userId: user.id,
+      action: AuditAction.LOGIN,
+      entity: "User",
+      entityId: user.id,
+      metadata: { email: user.email, role: user.role },
     });
 
     return response;

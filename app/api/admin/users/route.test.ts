@@ -8,6 +8,11 @@ vi.mock("@/lib/auth/admin-guard", () => ({
   requireAdmin: vi.fn(),
 }));
 
+vi.mock("@/lib/audit", () => ({
+  writeAuditLog: vi.fn(),
+  AuditAction: {},
+}));
+
 vi.mock("@/lib/prisma", () => ({
   prisma: {
     user: {

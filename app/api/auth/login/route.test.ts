@@ -17,6 +17,11 @@ vi.mock("@/lib/auth", () => ({
   signToken: vi.fn(async () => "signed-jwt"),
 }));
 
+vi.mock("@/lib/audit", () => ({
+  writeAuditLog: vi.fn(),
+  AuditAction: {},
+}));
+
 vi.mock("@/lib/prisma", () => ({
   prisma: {
     user: {

@@ -70,7 +70,9 @@ export default function ImportsPage() {
   const [isBatchRunning, setIsBatchRunning] = useState(false);
   const [batchInputKey, setBatchInputKey] = useState(0);
 
-  // List filter + pagination  const [listCompanyId, setListCompanyId] = useState("");  const [filterMonth, setFilterMonth] = useState("");
+  // List filter + pagination
+  const [listCompanyId, setListCompanyId] = useState("");
+  const [filterMonth, setFilterMonth] = useState("");
   const [filterStatus, setFilterStatus] = useState<"" | "DONE" | "FAILED" | "PENDING" | "PROCESSING">("");
   const [filterName, setFilterName] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
@@ -203,7 +205,10 @@ export default function ImportsPage() {
       }
 
       if (data.idempotent) {
-        toast.warning("Arquivo já importado para este período.", { id: uploadToastId });
+        // Backend re-applied current mappings and updated the summary even for duplicate files.
+        // Mark stale so Índices/Dashboard fetch fresh data on next navigation.
+        markCompanyStale(selectedCompanyId);
+        toast.warning("Arquivo já importado — mapeamentos reaplicados.", { id: uploadToastId });
       } else {
         toast.success("Importação concluída com sucesso!", { id: uploadToastId });
         markCompanyStale(selectedCompanyId);

@@ -237,6 +237,13 @@ function IndexCard({
               </p>
             </div>
           )}
+          {status === "undefined" && value === null && (
+            <div className="mt-3 rounded-lg bg-zinc-100 px-3 py-2 dark:bg-zinc-700/50">
+              <p className="text-[11px] text-zinc-500 dark:text-zinc-400">
+                Denominador zero — empresa sem passivos mapeados neste período. Índice não aplicável.
+              </p>
+            </div>
+          )}
           <p className="mt-3 text-[11px] text-zinc-400 dark:text-zinc-500">
             {config.focusAnalitico}
           </p>
@@ -345,8 +352,18 @@ export default function IndicesPage() {
 
   // ── Load summaries ────────────────────────────────────────────────────────
 
-  const loadSummaries = useCallback(async (ids: string[]) => {
+  const loadSummaries = useCallback(async (ids: string[], forceRefresh = false) => {
     if (ids.length === 0) { setCompaniesData([]); return; }
+
+    // Evict any companies marked stale by other pages (e.g. after a reimport)
+    for (const id of consumeStaleCompanyIds()) {
+      companyDataCache.delete(id);
+    }
+
+    // forceRefresh explicitly evicts the selected companies
+    if (forceRefresh) {
+      for (const id of ids) companyDataCache.delete(id);
+    }
 
     const missingIds = ids.filter((id) => !companyDataCache.has(id));
 
@@ -424,23 +441,35 @@ export default function IndicesPage() {
     [granularity, aggregatedPeriods],
   );
 
-  // Reset year/month when data loads
+  // Reset year/month when data loads — but preserve user selection if it still exists
   useEffect(() => {
-    if (mergedSummaries.length > 0) {
-      const now = new Date();
-      const currentYM = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
-      const hasCurrent = mergedSummaries.some((s) => s.referenceMonth === currentYM);
-      const target = hasCurrent
-        ? currentYM
-        : mergedSummaries[mergedSummaries.length - 1]!.referenceMonth;
-      const [y, m] = target.split("-");
-      setSelectedYear(y ?? "");
-      setSelectedMonth(m ?? "");
-    } else {
+    if (mergedSummaries.length === 0) {
       setSelectedYear("");
       setSelectedMonth("");
+      return;
     }
-  }, [mergedSummaries]);
+
+    // If the currently selected period still exists in the new data, keep it
+    const currentSelection = `${selectedYear}-${selectedMonth}`;
+    if (
+      selectedYear &&
+      selectedMonth &&
+      mergedSummaries.some((s) => s.referenceMonth === currentSelection)
+    ) {
+      return;
+    }
+
+    // Otherwise pick the most relevant available period
+    const now = new Date();
+    const currentYM = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+    const hasCurrent = mergedSummaries.some((s) => s.referenceMonth === currentYM);
+    const target = hasCurrent
+      ? currentYM
+      : mergedSummaries[mergedSummaries.length - 1]!.referenceMonth;
+    const [y, m] = target.split("-");
+    setSelectedYear(y ?? "");
+    setSelectedMonth(m ?? "");
+  }, [mergedSummaries, selectedYear, selectedMonth]);
 
   // Active period data
   const activeSummary = useMemo(() => {
@@ -526,21 +555,32 @@ export default function IndicesPage() {
         </div>
 
         {/* Filters */}
-        <div className="grid gap-3 sm:grid-cols-[1fr_auto]">
-          <MultiCompanySelect
-            companies={allowedCompanies}
-            selected={selectedCompanyIds}
-            onChange={setSelectedCompanyIds}
-          />
-          {loadingSummary && (
-            <div className="flex items-center gap-2 text-xs text-zinc-400">
-              <svg className="h-3.5 w-3.5 animate-spin" fill="none" viewBox="0 0 24 24">
-                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-              </svg>
-              Carregando…
-            </div>
-          )}
+        <div className="flex flex-wrap items-start gap-2">
+          <div className="min-w-0 flex-1">
+            <MultiCompanySelect
+              companies={allowedCompanies}
+              selected={selectedCompanyIds}
+              onChange={setSelectedCompanyIds}
+            />
+          </div>
+          <button
+            type="button"
+            onClick={() => void loadSummaries(selectedCompanyIds, true)}
+            disabled={loadingSummary || selectedCompanyIds.length === 0}
+            title="Atualizar dados"
+            className="flex shrink-0 items-center gap-1.5 rounded-lg border border-[--border] bg-[--surface] px-3 py-1.5 text-xs text-zinc-500 hover:bg-[--surface-2] disabled:opacity-40 dark:text-zinc-400"
+          >
+            <svg
+              className={`h-3.5 w-3.5 ${loadingSummary ? "animate-spin" : ""}`}
+              fill="none"
+              stroke="currentColor"
+              strokeWidth={2}
+              viewBox="0 0 24 24"
+            >
+              <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+            </svg>
+            {loadingSummary ? "Carregando…" : "Atualizar"}
+          </button>
         </div>
 
         {mergedSummaries.length > 0 && (
@@ -690,62 +730,74 @@ export default function IndicesPage() {
               </span>
             </div>
 
-            {/* Formula reference table */}
+{/* Formula reference — cards on mobile, table on md+ */}
             <section className="rounded-2xl border border-zinc-200 bg-white dark:border-zinc-700 dark:bg-zinc-800/60">
               <div className="border-b border-zinc-100 px-5 py-3 dark:border-zinc-700">
                 <h2 className="text-sm font-semibold text-zinc-700 dark:text-zinc-200">
                   Referência — Fórmulas e Interpretações
                 </h2>
               </div>
-              <div className="overflow-x-auto">
+
+              {/* Mobile: card list */}
+              <div className="divide-y divide-zinc-100 dark:divide-zinc-700 md:hidden">
+                {INDICES_CONFIG.map((cfg) => {
+                  const iv = indexValues.find((v) => v.key === cfg.key)!;
+                  const status = iv.isMapped ? getStatus(iv.value, cfg.thresholds) : "undefined";
+                  const s = STATUS_STYLES[status];
+                  return (
+                    <div key={cfg.key} className="px-4 py-3">
+                      <div className="mb-2 flex items-center gap-2">
+                        <span className={`inline-flex h-6 w-8 shrink-0 items-center justify-center rounded-md text-[11px] font-bold ${s.badge}`}>
+                          {cfg.abbrev}
+                        </span>
+                        <span className="font-medium text-zinc-800 dark:text-zinc-100">{cfg.label}</span>
+                      </div>
+                      <p className="mb-1 text-[11px] text-zinc-500 dark:text-zinc-400">
+                        <span className="font-semibold">Fórmula:</span>{" "}
+                        <code className="text-[11px]">{cfg.formula}</code>
+                      </p>
+                      <p className="text-[11px] text-zinc-500 dark:text-zinc-400">
+                        <span className="font-semibold">Foco:</span>{" "}{cfg.focusAnalitico}
+                      </p>
+                      <p className="mt-1 text-[11px] text-zinc-500 dark:text-zinc-400">
+                        <span className="font-semibold">Bom quando:</span>{" "}{cfg.interpretations.good}
+                      </p>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* Desktop: table */}
+              <div className="hidden overflow-x-auto md:block">
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="border-b border-zinc-100 dark:border-zinc-700">
-                      <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
-                        Índice
-                      </th>
-                      <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
-                        Fórmula
-                      </th>
-                      <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
-                        Foco Analítico
-                      </th>
-                      <th className="hidden px-5 py-3 text-left text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400 lg:table-cell">
-                        Interpretação (bom)
-                      </th>
+                      <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">Índice</th>
+                      <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">Fórmula</th>
+                      <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">Foco Analítico</th>
+                      <th className="hidden px-5 py-3 text-left text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400 lg:table-cell">Interpretação (bom)</th>
                     </tr>
                   </thead>
                   <tbody>
                     {INDICES_CONFIG.map((cfg, i) => {
                       const iv = indexValues.find((v) => v.key === cfg.key)!;
-                      const status = iv.isMapped
-                        ? getStatus(iv.value, cfg.thresholds)
-                        : "undefined";
+                      const status = iv.isMapped ? getStatus(iv.value, cfg.thresholds) : "undefined";
                       const s = STATUS_STYLES[status];
                       return (
-                        <tr
-                          key={cfg.key}
-                          className={`${i < INDICES_CONFIG.length - 1 ? "border-b border-zinc-100 dark:border-zinc-700" : ""}`}
-                        >
+                        <tr key={cfg.key} className={i < INDICES_CONFIG.length - 1 ? "border-b border-zinc-100 dark:border-zinc-700" : ""}>
                           <td className="px-5 py-3 font-medium text-zinc-800 dark:text-zinc-100">
                             <div className="flex items-center gap-2">
-                              <span
-                                className={`inline-flex h-6 w-8 items-center justify-center rounded-md text-[11px] font-bold ${s.badge}`}
-                              >
+                              <span className={`inline-flex h-6 w-8 items-center justify-center rounded-md text-[11px] font-bold ${s.badge}`}>
                                 {cfg.abbrev}
                               </span>
-                              <span className="hidden sm:inline">{cfg.label}</span>
+                              {cfg.label}
                             </div>
                           </td>
                           <td className="px-5 py-3 text-zinc-600 dark:text-zinc-400">
                             <code className="text-xs">{cfg.formula}</code>
                           </td>
-                          <td className="px-5 py-3 text-zinc-600 dark:text-zinc-400">
-                            {cfg.focusAnalitico}
-                          </td>
-                          <td className="hidden px-5 py-3 text-zinc-600 dark:text-zinc-400 lg:table-cell">
-                            {cfg.interpretations.good}
-                          </td>
+                          <td className="px-5 py-3 text-zinc-600 dark:text-zinc-400">{cfg.focusAnalitico}</td>
+                          <td className="hidden px-5 py-3 text-zinc-600 dark:text-zinc-400 lg:table-cell">{cfg.interpretations.good}</td>
                         </tr>
                       );
                     })}

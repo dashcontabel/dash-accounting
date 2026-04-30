@@ -329,23 +329,35 @@ export default function Home() {
     [granularity, aggregatedPeriods],
   );
 
-  // Reset year/month when summaries reload — prefer current month, fall back to last available
+  // Reset year/month when summaries reload — preserve user selection if period still exists
   useEffect(() => {
-    if (mergedSummaries.length > 0) {
-      const now = new Date();
-      const currentYM = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
-      const hasCurrent = mergedSummaries.some((s) => s.referenceMonth === currentYM);
-      const target = hasCurrent
-        ? currentYM
-        : mergedSummaries[mergedSummaries.length - 1]!.referenceMonth;
-      const [y, m] = target.split("-");
-      setSelectedYear(y ?? "");
-      setSelectedMonth(m ?? "");
-    } else {
+    if (mergedSummaries.length === 0) {
       setSelectedYear("");
       setSelectedMonth("");
+      return;
     }
-  }, [mergedSummaries]);
+
+    // Keep current selection if it still exists in the new data
+    const currentSelection = `${selectedYear}-${selectedMonth}`;
+    if (
+      selectedYear &&
+      selectedMonth &&
+      mergedSummaries.some((s) => s.referenceMonth === currentSelection)
+    ) {
+      return;
+    }
+
+    // Otherwise prefer current month, fall back to last available
+    const now = new Date();
+    const currentYM = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+    const hasCurrent = mergedSummaries.some((s) => s.referenceMonth === currentYM);
+    const target = hasCurrent
+      ? currentYM
+      : mergedSummaries[mergedSummaries.length - 1]!.referenceMonth;
+    const [y, m] = target.split("-");
+    setSelectedYear(y ?? "");
+    setSelectedMonth(m ?? "");
+  }, [mergedSummaries, selectedYear, selectedMonth]);
 
   // Active KPI data:
   //   monthly   → selected month
@@ -902,6 +914,21 @@ export default function Home() {
                   </>
                 ) : (
                   <>
+                    {/* Shared legend — rendered once in HTML above both charts */}
+                    <div className="mb-3 grid grid-cols-2 gap-x-4 gap-y-1.5 md:flex md:flex-wrap md:gap-x-4 md:gap-y-1.5">
+                      {companiesData.map((company, i) => (
+                        <span key={company.companyId} className="flex min-w-0 items-center gap-1.5">
+                          <span
+                            className="h-2 w-2 shrink-0 rounded-full"
+                            style={{ background: COMPANY_COLORS[i % COMPANY_COLORS.length] }}
+                          />
+                          <span className="max-w-30 truncate text-[10px] text-zinc-500 dark:text-zinc-400 sm:max-w-40">
+                            {company.companyName}
+                          </span>
+                        </span>
+                      ))}
+                    </div>
+
                     <p className="mb-2 text-xs font-semibold text-zinc-500 dark:text-zinc-400">Receitas por empresa</p>
                     {comparativeSeries.length > 0 ? (
                       <ResponsiveContainer width="100%" height={160}>
@@ -910,11 +937,6 @@ export default function Home() {
                           <XAxis dataKey="period" tick={{ fontSize: 10, fill: chartTheme.tick }} axisLine={false} tickLine={false} interval="preserveStartEnd" />
                           <YAxis tickFormatter={formatCurrencyShort} width={52} tick={{ fontSize: 10, fill: chartTheme.tick }} axisLine={false} tickLine={false} />
                           <Tooltip formatter={currencyTooltipFormatter} contentStyle={{ fontSize: 12, borderRadius: 10, border: `1px solid ${chartTheme.tooltip.border}`, background: chartTheme.tooltip.background, boxShadow: "0 4px 12px rgba(0,0,0,.15)" }} labelStyle={{ fontWeight: 600, color: chartTheme.tooltip.label }} />
-                          <Legend
-                            iconSize={8}
-                            wrapperStyle={{ fontSize: 10, paddingTop: 6, lineHeight: "18px" }}
-                            formatter={(value: string) => value.length > 20 ? `${value.slice(0, 18)}…` : value}
-                          />
                           {companiesData.map((company, i) => (
                             <Bar key={company.companyId} dataKey={company.companyName} fill={COMPANY_COLORS[i % COMPANY_COLORS.length]} radius={[4, 4, 0, 0]} />
                           ))}
@@ -931,11 +953,6 @@ export default function Home() {
                           <XAxis dataKey="period" tick={{ fontSize: 10, fill: chartTheme.tick }} axisLine={false} tickLine={false} interval="preserveStartEnd" />
                           <YAxis tickFormatter={formatCurrencyShort} width={52} tick={{ fontSize: 10, fill: chartTheme.tick }} axisLine={false} tickLine={false} />
                           <Tooltip formatter={currencyTooltipFormatter} contentStyle={{ fontSize: 12, borderRadius: 10, border: `1px solid ${chartTheme.tooltip.border}`, background: chartTheme.tooltip.background, boxShadow: "0 4px 12px rgba(0,0,0,.15)" }} labelStyle={{ fontWeight: 600, color: chartTheme.tooltip.label }} />
-                          <Legend
-                            iconSize={8}
-                            wrapperStyle={{ fontSize: 10, paddingTop: 6, lineHeight: "18px" }}
-                            formatter={(value: string) => value.length > 20 ? `${value.slice(0, 18)}…` : value}
-                          />
                           {companiesData.map((company, i) => (
                             <Bar key={company.companyId} dataKey={company.companyName} fill={COMPANY_COLORS[i % COMPANY_COLORS.length]} radius={[4, 4, 0, 0]} />
                           ))}
@@ -949,29 +966,51 @@ export default function Home() {
               </div>
 
               {/* Pie chart */}
-              <div className="rounded-xl border border-zinc-100 bg-white p-3 dark:border-zinc-700/50 dark:bg-zinc-900/50 sm:p-4 lg:col-span-2">
+              <div className="flex flex-col rounded-xl border border-zinc-100 bg-white p-3 dark:border-zinc-700/50 dark:bg-zinc-900/50 sm:p-4 lg:col-span-2">
                 <p className="mb-3 text-xs font-semibold text-zinc-500 dark:text-zinc-400">Composição das despesas</p>
                 {expensePieData.length > 0 ? (
-                  <>
-                    <ResponsiveContainer width="100%" height={160}>
-                      <PieChart>
-                        <Pie data={expensePieData} cx="50%" cy="50%" innerRadius={48} outerRadius={72} paddingAngle={2} dataKey="value">
-                          {expensePieData.map((entry, index) => (
-                            <Cell key={index} fill={entry.fill} />
-                          ))}
-                        </Pie>
-                        <Tooltip formatter={currencyTooltipFormatter} contentStyle={{ fontSize: 12, borderRadius: 10, border: `1px solid ${chartTheme.tooltip.border}`, background: chartTheme.tooltip.background }} labelStyle={{ color: chartTheme.tooltip.label }} />
-                      </PieChart>
-                    </ResponsiveContainer>
-                    <ul className="mt-2 grid grid-cols-2 gap-1">
-                      {expensePieData.map((item) => (
-                        <li key={item.name} className="flex items-center gap-1.5 text-xs text-zinc-500 dark:text-zinc-400">
-                          <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: item.fill }} />
-                          <span>{item.name}</span>
-                        </li>
-                      ))}
+                  <div className="flex flex-1 flex-col gap-4">
+                    <div className="h-52 w-full sm:h-64 lg:h-72">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <PieChart>
+                          <Pie
+                            data={expensePieData}
+                            cx="50%"
+                            cy="50%"
+                            innerRadius="38%"
+                            outerRadius="62%"
+                            paddingAngle={3}
+                            dataKey="value"
+                          >
+                            {expensePieData.map((entry, index) => (
+                              <Cell key={index} fill={entry.fill} />
+                            ))}
+                          </Pie>
+                          <Tooltip
+                            formatter={currencyTooltipFormatter}
+                            contentStyle={{ fontSize: 12, borderRadius: 10, border: `1px solid ${chartTheme.tooltip.border}`, background: chartTheme.tooltip.background }}
+                            labelStyle={{ color: chartTheme.tooltip.label }}
+                          />
+                        </PieChart>
+                      </ResponsiveContainer>
+                    </div>
+                    <ul className="mt-auto w-full space-y-2">
+                      {expensePieData.map((item) => {
+                        const total = expensePieData.reduce((s, x) => s + x.value, 0);
+                        const pct = total > 0 ? ((item.value / total) * 100).toFixed(1) : "0.0";
+                        return (
+                          <li key={item.name} className="flex items-center gap-2 text-xs">
+                            <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: item.fill }} />
+                            <span className="flex-1 text-zinc-600 dark:text-zinc-400">{item.name}</span>
+                            <span className="tabular-nums text-zinc-400 dark:text-zinc-500">{pct}%</span>
+                            <span className="tabular-nums font-medium text-zinc-700 dark:text-zinc-200">
+                              {formatCurrencyShort(item.value)}
+                            </span>
+                          </li>
+                        );
+                      })}
                     </ul>
-                  </>
+                  </div>
                 ) : (
                   <p className="py-8 text-center text-sm text-zinc-400 dark:text-zinc-500">Sem despesas no período.</p>
                 )}

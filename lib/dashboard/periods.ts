@@ -43,8 +43,18 @@ export type AggregatedPeriod = {
   dataJson: Record<string, number>;
 };
 
-// Fields that are averaged rather than summed when aggregating periods
-const AVERAGE_FIELDS = new Set(["SD_BANCARIO"]);
+// Fields that are averaged rather than summed when aggregating periods.
+// Balance sheet (patrimonial) values are point-in-time snapshots — average them
+// across months instead of summing, just like SD_BANCARIO.
+const AVERAGE_FIELDS = new Set([
+  "SD_BANCARIO",
+  "ATIVO_CIRCULANTE",
+  "PASSIVO_CIRCULANTE",
+  "ESTOQUES",
+  "DISPONIBILIDADES",
+  "REALIZAVEL_LONGO_PRAZO",
+  "PASSIVO_NAO_CIRCULANTE",
+]);
 
 // Fields that are recalculated from aggregated sums
 const CALCULATED_FIELDS = new Set(["RESULTADO", "RENTABILIDADE", "ALUGUEL_LIQUIDO"]);

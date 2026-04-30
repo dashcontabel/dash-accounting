@@ -71,6 +71,7 @@ export default function ImportsPage() {
   const [batchInputKey, setBatchInputKey] = useState(0);
 
   // List filter + pagination
+  const [listCompanyId, setListCompanyId] = useState("");
   const [filterMonth, setFilterMonth] = useState("");
   const [filterStatus, setFilterStatus] = useState<"" | "DONE" | "FAILED" | "PENDING" | "PROCESSING">("");
   const [filterName, setFilterName] = useState("");
@@ -154,6 +155,7 @@ export default function ImportsPage() {
         setMe(data.user);
         setCompanies(allowedCompanies);
         setSelectedCompanyId(initialCompanyId);
+        setListCompanyId(initialCompanyId);
         setReferenceMonth(new Date().toISOString().slice(0, 7));
 
         if (initialCompanyId) {
@@ -203,7 +205,10 @@ export default function ImportsPage() {
       }
 
       if (data.idempotent) {
-        toast.warning("Arquivo já importado para este período.", { id: uploadToastId });
+        // Backend re-applied current mappings and updated the summary even for duplicate files.
+        // Mark stale so Índices/Dashboard fetch fresh data on next navigation.
+        markCompanyStale(selectedCompanyId);
+        toast.warning("Arquivo já importado — mapeamentos reaplicados.", { id: uploadToastId });
       } else {
         toast.success("Importação concluída com sucesso!", { id: uploadToastId });
         markCompanyStale(selectedCompanyId);
@@ -217,6 +222,8 @@ export default function ImportsPage() {
       // Reset file state and input element so the button unlocks for the next import
       setFile(null);
       setFileInputKey((k) => k + 1);
+      // Switch list view to the company just uploaded so the result is immediately visible
+      setListCompanyId(selectedCompanyId);
       await loadBatches(selectedCompanyId);
     } catch {
       toast.error("Falha no upload. Verifique sua conexão e tente novamente.", { id: uploadToastId });
@@ -227,7 +234,12 @@ export default function ImportsPage() {
 
   async function handleCompanyChange(companyId: string) {
     setSelectedCompanyId(companyId);
+  }
+
+  async function handleListCompanyChange(companyId: string) {
+    setListCompanyId(companyId);
     setExpandedBatchId(null);
+    setCurrentPage(1);
 
     if (companyId) {
       try {
@@ -271,7 +283,7 @@ export default function ImportsPage() {
       if (deletedMonth) setActionHint(selectedCompanyId, { action: "delete", referenceMonth: deletedMonth });
       if (expandedBatchId === batchId) setExpandedBatchId(null);
       setBatchSummaries((prev) => { const next = { ...prev }; delete next[batchId]; return next; });
-      await loadBatches(selectedCompanyId);
+      await loadBatches(listCompanyId || selectedCompanyId);
     } catch {
       toast.error("Falha ao excluir import.", { id: deleteToastId });
     } finally {
@@ -340,6 +352,8 @@ export default function ImportsPage() {
     }
 
     setIsBatchRunning(false);
+    // Switch list view to the batch-uploaded company
+    setListCompanyId(selectedCompanyId);
     await loadBatches(selectedCompanyId);
   }
 
@@ -558,47 +572,57 @@ export default function ImportsPage() {
       {!isLoading ? (
         <section className="mt-6 space-y-3">
           {/* ── Filters ── */}
-          {batches.length > 0 && (
-            <div className="flex flex-wrap gap-2 rounded-xl border border-[--border] bg-[--surface] p-3">
-              <input
-                type="month"
-                value={filterMonth}
-                onChange={(e) => { setFilterMonth(e.target.value); setCurrentPage(1); }}
-                className="rounded-lg border border-[--border] bg-[--surface-2] px-3 py-1.5 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-brand/40 dark:scheme-dark dark:bg-[#1a2540] dark:text-zinc-100"
-                title="Filtrar por mês"
-              />
-              <select
-                value={filterStatus}
-                onChange={(e) => { setFilterStatus(e.target.value as typeof filterStatus); setCurrentPage(1); }}
-                className="rounded-lg border border-[--border] bg-[--surface-2] px-3 py-1.5 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-brand/40 dark:scheme-dark dark:bg-[#1a2540] dark:text-zinc-100"
+          <div className="flex flex-wrap gap-2 rounded-xl border border-[--border] bg-[--surface] p-3">
+            {/* Company filter — always visible so you can switch without touching the upload form */}
+            <select
+              value={listCompanyId}
+              onChange={(e) => void handleListCompanyChange(e.target.value)}
+              className="rounded-lg border border-[--border] bg-[--surface-2] px-3 py-1.5 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-brand/40 dark:scheme-dark dark:bg-[#1a2540] dark:text-zinc-100 [&_option]:dark:bg-[#1a2540] [&_option]:dark:text-zinc-100"
+              title="Filtrar por empresa"
+            >
+              <option value="">Todas as empresas</option>
+              {companies.map((c) => (
+                <option key={c.id} value={c.id}>{c.name}</option>
+              ))}
+            </select>
+            <input
+              type="month"
+              value={filterMonth}
+              onChange={(e) => { setFilterMonth(e.target.value); setCurrentPage(1); }}
+              className="rounded-lg border border-[--border] bg-[--surface-2] px-3 py-1.5 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-brand/40 dark:scheme-dark dark:bg-[#1a2540] dark:text-zinc-100"
+              title="Filtrar por mês"
+            />
+            <select
+              value={filterStatus}
+              onChange={(e) => { setFilterStatus(e.target.value as typeof filterStatus); setCurrentPage(1); }}
+              className="rounded-lg border border-[--border] bg-[--surface-2] px-3 py-1.5 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-brand/40 dark:scheme-dark dark:bg-[#1a2540] dark:text-zinc-100"
+            >
+              <option value="">Todos os status</option>
+              <option value="DONE">Concluído</option>
+              <option value="FAILED">Falha</option>
+              <option value="PROCESSING">Processando</option>
+              <option value="PENDING">Pendente</option>
+            </select>
+            <input
+              type="text"
+              placeholder="Buscar por nome do arquivo..."
+              value={filterName}
+              onChange={(e) => { setFilterName(e.target.value); setCurrentPage(1); }}
+              className="min-w-48 flex-1 rounded-lg border border-[--border] bg-[--surface-2] px-3 py-1.5 text-sm text-foreground placeholder-[--text-muted] focus:outline-none focus:ring-2 focus:ring-brand/40"
+            />
+            {(filterMonth || filterStatus || filterName) && (
+              <button
+                type="button"
+                onClick={() => { setFilterMonth(""); setFilterStatus(""); setFilterName(""); setCurrentPage(1); }}
+                className="rounded-lg border border-[--border] px-3 py-1.5 text-xs text-[--text-muted] hover:bg-[--surface-2]"
               >
-                <option value="">Todos os status</option>
-                <option value="DONE">Concluído</option>
-                <option value="FAILED">Falha</option>
-                <option value="PROCESSING">Processando</option>
-                <option value="PENDING">Pendente</option>
-              </select>
-              <input
-                type="text"
-                placeholder="Buscar por nome do arquivo..."
-                value={filterName}
-                onChange={(e) => { setFilterName(e.target.value); setCurrentPage(1); }}
-                className="min-w-48 flex-1 rounded-lg border border-[--border] bg-[--surface-2] px-3 py-1.5 text-sm text-foreground placeholder-[--text-muted] focus:outline-none focus:ring-2 focus:ring-brand/40"
-              />
-              {(filterMonth || filterStatus || filterName) && (
-                <button
-                  type="button"
-                  onClick={() => { setFilterMonth(""); setFilterStatus(""); setFilterName(""); setCurrentPage(1); }}
-                  className="rounded-lg border border-[--border] px-3 py-1.5 text-xs text-[--text-muted] hover:bg-[--surface-2]"
-                >
-                  Limpar filtros
-                </button>
-              )}
-              <span className="ml-auto self-center text-xs text-[--text-muted]">
-                {filteredBatches.length} de {batches.length} registros
-              </span>
-            </div>
-          )}
+                Limpar filtros
+              </button>
+            )}
+            <span className="ml-auto self-center text-xs text-[--text-muted]">
+              {filteredBatches.length} de {batches.length} registros
+            </span>
+          </div>
 
           {filteredBatches.length === 0 ? (
             <p className="text-sm text-[--text-muted]">

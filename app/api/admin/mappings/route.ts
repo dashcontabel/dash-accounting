@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 
 import { requireAdmin } from "@/lib/auth/admin-guard";
+import { AuditAction, writeAuditLog } from "@/lib/audit";
 import { prisma } from "@/lib/prisma";
 
 const MAPPING_SELECT = {
@@ -71,6 +72,14 @@ export async function POST(request: NextRequest) {
       formula: parsed.data.formula,
     },
     select: MAPPING_SELECT,
+  });
+
+  writeAuditLog({
+    userId: admin.id,
+    action: AuditAction.MAPPING_CREATE,
+    entity: "AccountMapping",
+    entityId: mapping.id,
+    metadata: { dashboardField: parsed.data.dashboardField },
   });
 
   return NextResponse.json({ mapping }, { status: 201 });

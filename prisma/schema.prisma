@@ -27,6 +27,7 @@ enum ImportBatchStatus {
 
 enum ImportSourceType {
   XLSX
+  RAZAO
 }
 
 enum MappingMatchType {
@@ -80,6 +81,7 @@ model Company {
   userCompanies UserCompany[]
   importBatches ImportBatch[]
   ledgerEntries LedgerEntry[]
+  razaoEntries  RazaoEntry[]
   dashboardMonthlySummaries DashboardMonthlySummary[]
   createdAt     DateTime      @default(now())
   updatedAt     DateTime      @updatedAt
@@ -114,6 +116,7 @@ model ImportBatch {
   createdByUserId String?
   createdByUser  User?             @relation("ImportBatchCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
   ledgerEntries  LedgerEntry[]
+  razaoEntries   RazaoEntry[]
   unmappedAccounts UnmappedAccount[]
   createdAt      DateTime          @default(now())
   updatedAt      DateTime          @updatedAt
@@ -138,6 +141,30 @@ model LedgerEntry {
   createdAt      DateTime    @default(now())
 
   @@index([companyId, referenceMonth])
+  @@index([importBatchId])
+}
+
+model RazaoEntry {
+  id              String      @id @default(cuid())
+  importBatchId   String
+  importBatch     ImportBatch @relation(fields: [importBatchId], references: [id], onDelete: Cascade)
+  companyId       String
+  company         Company     @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  referenceMonth  String
+  entryDate       DateTime    @db.Date
+  accountCode     String
+  accountName     String
+  lot             String?
+  counterpartCode String?
+  counterpartName String?
+  description     String?
+  debit           Decimal     @db.Decimal(18, 2)
+  credit          Decimal     @db.Decimal(18, 2)
+  balance         Decimal     @db.Decimal(18, 2)
+  createdAt       DateTime    @default(now())
+
+  @@index([companyId, referenceMonth])
+  @@index([companyId, referenceMonth, accountCode])
   @@index([importBatchId])
 }
 
@@ -185,6 +212,10 @@ enum AuditAction {
   LOGIN
   IMPORT_CREATE
   IMPORT_DELETE
+  IMPORT_BULK_DELETE
+  MAPPING_CREATE
+  MAPPING_UPDATE
+  MAPPING_DELETE
   USER_CREATE
   USER_UPDATE
   COMPANY_CREATE

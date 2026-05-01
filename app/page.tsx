@@ -27,6 +27,7 @@ import NotificationsBell from "./components/notifications-bell";
 import DataFreshnessBadge from "./components/data-freshness-badge";
 // Heavy chart — loaded only on the client to reduce server bundle size
 const HeatmapChart = dynamic(() => import("./components/heatmap-chart"), { ssr: false });
+const RazaoTransactionsModal = dynamic(() => import("./components/razao-transactions-modal"), { ssr: false });
 import { useTheme } from "./components/theme-provider";
 import {
   aggregateSummaries,
@@ -94,21 +95,38 @@ function KpiCard({
   color = "blue",
   sub,
   icon,
+  onDrillDown,
 }: {
   label: string;
   value: number | undefined;
   color?: KpiColor;
   sub?: string;
   icon?: React.ReactNode;
+  onDrillDown?: () => void;
 }) {
   const c = COLOR_MAP[color];
+  // Only allow drill-down when there is an actual non-zero value to inspect
+  const interactive = !!onDrillDown && !!value && value !== 0;
   return (
-    <article className={`group min-w-0 rounded-2xl border p-5 transition-shadow hover:shadow-md ${c.card}`}>
+    <article
+      className={`group min-w-0 rounded-2xl border p-5 transition-shadow hover:shadow-md ${c.card} ${interactive ? "cursor-pointer" : ""}`}
+      onClick={interactive ? onDrillDown : undefined}
+      role={interactive ? "button" : undefined}
+      tabIndex={interactive ? 0 : undefined}
+      onKeyDown={interactive ? (e) => { if (e.key === "Enter" || e.key === " ") onDrillDown!(); } : undefined}
+    >
       <div className="flex items-start justify-between gap-2">
         <p className="min-w-0 text-xs font-semibold uppercase leading-tight tracking-wider text-zinc-500 dark:text-zinc-400">{label}</p>
         {icon && (
-          <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-xl ${c.icon}`}>
+          <span className={`relative flex h-8 w-8 shrink-0 items-center justify-center rounded-xl ${c.icon}`}>
             {icon}
+            {interactive && (
+              <span className="absolute -right-1 -top-1 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-blue-500 ring-2 ring-white dark:ring-zinc-900">
+                <svg className="h-2 w-2 text-white" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24" aria-hidden="true">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-4.35-4.35M17 11A6 6 0 1 1 5 11a6 6 0 0 1 12 0z" />
+                </svg>
+              </span>
+            )}
           </span>
         )}
       </div>
@@ -197,6 +215,8 @@ export default function Home() {
   const [seeding, setSeeding] = useState(false);
   const [filtersOpen, setFiltersOpen] = useState(true);
   const [isSyncing, setIsSyncing] = useState(false);
+  const [drillDown, setDrillDown] = useState<{ accountCode: string | null; label: string } | null>(null);
+  const [mappingCodes, setMappingCodes] = useState<Record<string, string[]>>({});
 
   // ── Freshness polling + notifications ──────────────────────────────────────
 
@@ -228,8 +248,15 @@ export default function Home() {
       }
 
       try {
-        const response = await fetch("/api/auth/me", { cache: "no-store" });
+        const [response, fieldCodesRes] = await Promise.all([
+          fetch("/api/auth/me", { cache: "no-store" }),
+          fetch("/api/dashboard/field-codes", { cache: "no-store" }),
+        ]);
         const data = (await response.json()) as MeResponse;
+        if (fieldCodesRes.ok) {
+          const fc = (await fieldCodesRes.json()) as { fieldCodes?: Record<string, string[]> };
+          if (isMounted) setMappingCodes(fc.fieldCodes ?? {});
+        }
 
         if (!response.ok || !data.user) {
           router.push("/login");
@@ -410,6 +437,8 @@ export default function Home() {
 
   // Per-company receitas series (for comparative bar chart when multi-company)
   const isMultiCompany = companiesData.length > 1;
+  // Drill-down available only for single-company monthly view (single referenceMonth is unambiguous)
+  const canDrillDown = !isMultiCompany && granularity === "monthly" && !!selectedYear && !!selectedMonth;
   const COMPANY_COLORS = ["#10b981", "#0f4c81", "#f59e0b", "#ef4444", "#a855f7", "#0ea5e9"];
 
   const comparativeSeries = useMemo(() => {
@@ -1077,11 +1106,14 @@ export default function Home() {
 
               <div className="grid gap-4 sm:grid-cols-2">
                 <KpiCard label="Faturamento" value={get(d, "FATURAMENTO")} color="green"
-                  sub="NFs emitidas" icon={Icons.invoice} />
+                  sub="NFs emitidas" icon={Icons.invoice}
+                  onDrillDown={canDrillDown && mappingCodes["FATURAMENTO"]?.[0] ? () => setDrillDown({ accountCode: mappingCodes["FATURAMENTO"][0]!, label: "Faturamento" }) : undefined} />
                 <KpiCard label="NFs Recebidas" value={get(d, "NFS_RECEBIDAS")} color="teal"
-                  sub="Pagamentos recebidos" icon={Icons.invoice} />
+                  sub="Pagamentos recebidos" icon={Icons.invoice}
+                  onDrillDown={canDrillDown && mappingCodes["NFS_RECEBIDAS"]?.[0] ? () => setDrillDown({ accountCode: mappingCodes["NFS_RECEBIDAS"][0]!, label: "NFs Recebidas" }) : undefined} />
                 <KpiCard label="Rendimento Bruto" value={get(d, "RENDIMENTO_BRUTO")} color="blue"
-                  sub="Aplicações financeiras" icon={Icons.chart} />
+                  sub="Aplicações financeiras" icon={Icons.chart}
+                  onDrillDown={canDrillDown && mappingCodes["RENDIMENTO_BRUTO"]?.[0] ? () => setDrillDown({ accountCode: mappingCodes["RENDIMENTO_BRUTO"][0]!, label: "Rendimento Bruto" }) : undefined} />
                 <KpiCard label="Aluguel" value={get(d, "ALUGUEL")} color="teal"
                   icon={Icons.building} />
               </div>
@@ -1130,9 +1162,12 @@ export default function Home() {
               </div>
 
               <div className="grid gap-4 sm:grid-cols-2">
-                <KpiCard label="Impostos" value={get(d, "IMPOSTOS")} color="red" icon={Icons.tax} />
-                <KpiCard label="IOF / IRRF" value={get(d, "IOF_IRRF")} color="red" icon={Icons.dollar} />
-                <KpiCard label="Demais Despesas" value={get(d, "DEMAIS_DESPESAS")} color="amber" icon={Icons.chart} />
+                <KpiCard label="Impostos" value={get(d, "IMPOSTOS")} color="red" icon={Icons.tax}
+                  onDrillDown={canDrillDown && mappingCodes["IMPOSTOS"]?.[0] ? () => setDrillDown({ accountCode: mappingCodes["IMPOSTOS"][0]!, label: "Impostos" }) : undefined} />
+                <KpiCard label="IOF / IRRF" value={get(d, "IOF_IRRF")} color="red" icon={Icons.dollar}
+                  onDrillDown={canDrillDown && mappingCodes["IOF_IRRF"]?.[0] ? () => setDrillDown({ accountCode: mappingCodes["IOF_IRRF"][0]!, label: "IOF / IRRF" }) : undefined} />
+                <KpiCard label="Demais Despesas" value={get(d, "DEMAIS_DESPESAS")} color="amber" icon={Icons.chart}
+                  onDrillDown={canDrillDown && mappingCodes["DEMAIS_DESPESAS"]?.[0] ? () => setDrillDown({ accountCode: mappingCodes["DEMAIS_DESPESAS"][0]!, label: "Demais Despesas" }) : undefined} />
                 <KpiCard label="Condomínio" value={get(d, "CONDOMINIO")} color="amber" icon={Icons.building} />
               </div>
 
@@ -1159,7 +1194,8 @@ export default function Home() {
                 <h3 className="text-xs font-bold uppercase tracking-widest text-zinc-400 dark:text-zinc-500">Saldos Bancários</h3>
               </div>
               <KpiCard label="Saldo Disponível" value={get(d, "SD_BANCARIO")} color="purple"
-                sub="Soma de todas as contas 1.1.1" icon={Icons.bank} />
+                sub="Soma de todas as contas 1.1.1" icon={Icons.bank}
+                onDrillDown={canDrillDown && mappingCodes["SD_BANCARIO"]?.[0] ? () => setDrillDown({ accountCode: mappingCodes["SD_BANCARIO"][0]!, label: "Saldo Bancário" }) : undefined} />
             </div>
 
             {/* Rendimento Passivo */}
@@ -1187,10 +1223,22 @@ export default function Home() {
                 <h3 className="text-xs font-bold uppercase tracking-widest text-zinc-400 dark:text-zinc-500">Distribuição de Lucros</h3>
               </div>
               <KpiCard label="Distribuição de Lucros" value={get(d, "DISTRIB_LUCROS")} color="purple"
-                icon={Icons.dollar} />
+                icon={Icons.dollar}
+                onDrillDown={canDrillDown && mappingCodes["DISTRIB_LUCROS"]?.[0] ? () => setDrillDown({ accountCode: mappingCodes["DISTRIB_LUCROS"][0]!, label: "Distribuição de Lucros" }) : undefined} />
             </div>
           </div>
         </>
+      )}
+
+      {/* ── Razão drill-down modal ── */}
+      {drillDown && selectedYear && selectedMonth && selectedCompanyIds[0] && (
+        <RazaoTransactionsModal
+          companyId={selectedCompanyIds[0]}
+          referenceMonth={`${selectedYear}-${selectedMonth}`}
+          accountCode={drillDown.accountCode}
+          label={drillDown.label}
+          onClose={() => setDrillDown(null)}
+        />
       )}
     </AppShell>
   );

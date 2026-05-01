@@ -63,6 +63,8 @@ export default function ImportsPage() {
   const [isUploading, setIsUploading] = useState(false);
   const [deletingBatchId, setDeletingBatchId] = useState<string | null>(null);
   const [fileInputKey, setFileInputKey] = useState(0);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [isBulkDeleting, setIsBulkDeleting] = useState(false);
 
   // Batch import state
   const [batchMode, setBatchMode] = useState(false);
@@ -89,6 +91,10 @@ export default function ImportsPage() {
 
   const totalPages = Math.max(1, Math.ceil(filteredBatches.length / PAGE_SIZE));
   const pagedBatches = filteredBatches.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
+
+  // All currently-visible (paged) ids selected?
+  const allPageSelected = pagedBatches.length > 0 && pagedBatches.every((b) => selectedIds.has(b.id));
+  const someSelected = selectedIds.size > 0;
 
   const canUpload = useMemo(
     () => Boolean(file && selectedCompanyId && referenceMonth && me?.role === "ADMIN"),
@@ -283,11 +289,54 @@ export default function ImportsPage() {
       if (deletedMonth) setActionHint(selectedCompanyId, { action: "delete", referenceMonth: deletedMonth });
       if (expandedBatchId === batchId) setExpandedBatchId(null);
       setBatchSummaries((prev) => { const next = { ...prev }; delete next[batchId]; return next; });
+      setSelectedIds((prev) => { const next = new Set(prev); next.delete(batchId); return next; });
       await loadBatches(listCompanyId || selectedCompanyId);
     } catch {
       toast.error("Falha ao excluir import.", { id: deleteToastId });
     } finally {
       setDeletingBatchId(null);
+    }
+  }
+
+  async function handleBulkDelete() {
+    if (selectedIds.size === 0) return;
+    const count = selectedIds.size;
+    if (!await confirmToast(`Excluir ${count} import${count > 1 ? "s" : ""} selecionado${count > 1 ? "s" : ""}? Os dados do dashboard dos meses afetados também serão removidos.`)) return;
+
+    setIsBulkDeleting(true);
+    const toastId = toast.loading(`Excluindo ${count} import${count > 1 ? "s" : ""}...`);
+    try {
+      const response = await fetch("/api/imports/bulk-delete", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ids: Array.from(selectedIds) }),
+      });
+      const data = (await response.json()) as { deleted?: number; failed?: string[]; error?: string };
+      if (!response.ok) {
+        toast.error(data.error ?? "Falha ao excluir imports.", { id: toastId });
+        return;
+      }
+      const { deleted = 0, failed = [] } = data;
+      if (failed.length > 0) {
+        toast.warning(`${deleted} excluído${deleted !== 1 ? "s" : ""}, ${failed.length} falharam.`, { id: toastId });
+      } else {
+        toast.success(`${deleted} import${deleted !== 1 ? "s" : ""} excluído${deleted !== 1 ? "s" : ""} com sucesso.`, { id: toastId });
+      }
+      markCompanyStale(listCompanyId || selectedCompanyId);
+      setSelectedIds(new Set(failed)); // keep only the ones that failed
+      setBatchSummaries((prev) => {
+        const next = { ...prev };
+        for (const id of selectedIds) if (!failed.includes(id)) delete next[id];
+        return next;
+      });
+      if (expandedBatchId && !failed.includes(expandedBatchId) && selectedIds.has(expandedBatchId)) {
+        setExpandedBatchId(null);
+      }
+      await loadBatches(listCompanyId || selectedCompanyId);
+    } catch {
+      toast.error("Falha ao excluir imports.", { id: toastId });
+    } finally {
+      setIsBulkDeleting(false);
     }
   }
 
@@ -573,7 +622,7 @@ export default function ImportsPage() {
         <section className="mt-6 space-y-3">
           {/* ── Filters ── */}
           <div className="flex flex-wrap gap-2 rounded-xl border border-[--border] bg-[--surface] p-3">
-            {/* Company filter — always visible so you can switch without touching the upload form */}
+            {/* Company filter */}
             <select
               value={listCompanyId}
               onChange={(e) => void handleListCompanyChange(e.target.value)}
@@ -624,6 +673,50 @@ export default function ImportsPage() {
             </span>
           </div>
 
+          {/* ── Bulk action bar ── */}
+          {me?.role === "ADMIN" && filteredBatches.length > 0 && (
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-xl border border-[--border] bg-[--surface] px-4 py-2.5">
+              <label className="flex cursor-pointer items-center gap-2 text-sm text-foreground select-none">
+                <input
+                  type="checkbox"
+                  checked={allPageSelected}
+                  onChange={(e) => {
+                    if (e.target.checked) {
+                      setSelectedIds((prev) => { const next = new Set(prev); pagedBatches.forEach((b) => next.add(b.id)); return next; });
+                    } else {
+                      setSelectedIds((prev) => { const next = new Set(prev); pagedBatches.forEach((b) => next.delete(b.id)); return next; });
+                    }
+                  }}
+                  className="h-4 w-4 rounded accent-brand"
+                />
+                Selecionar página
+              </label>
+              {someSelected && (
+                <>
+                  <span className="text-xs text-[--text-muted]">{selectedIds.size} selecionado{selectedIds.size !== 1 ? "s" : ""}</span>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedIds(new Set())}
+                    className="text-xs text-[--text-muted] underline hover:text-foreground"
+                  >
+                    Limpar seleção
+                  </button>
+                  <button
+                    type="button"
+                    disabled={isBulkDeleting}
+                    onClick={() => void handleBulkDelete()}
+                    className="ml-auto inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-red-200 bg-red-50 px-3 py-1.5 text-xs font-medium text-red-700 hover:bg-red-100 disabled:opacity-40 dark:border-red-800/40 dark:bg-red-950/20 dark:text-red-400 dark:hover:bg-red-900/30 transition-colors"
+                  >
+                    <svg className="h-3.5 w-3.5 shrink-0" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                    </svg>
+                    {isBulkDeleting ? "Excluindo..." : `Excluir ${selectedIds.size}`}
+                  </button>
+                </>
+              )}
+            </div>
+          )}
+
           {filteredBatches.length === 0 ? (
             <p className="text-sm text-[--text-muted]">
               {batches.length === 0 ? "Nenhum batch importado para a empresa selecionada." : "Nenhum resultado para os filtros aplicados."}
@@ -636,15 +729,34 @@ export default function ImportsPage() {
               className={`rounded-xl border bg-[--surface] p-4 shadow-sm transition-colors ${
                 expandedBatchId === batch.id
                   ? "border-brand ring-1 ring-brand/30"
-                  : "border-[--border]"
+                  : selectedIds.has(batch.id)
+                    ? "border-brand/40 bg-brand/5"
+                    : "border-[--border]"
               }`}
             >
               <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                <div>
-                  <p className="text-sm font-semibold text-foreground">
-                    {batch.fileName || "Arquivo sem nome"} — {batch.referenceMonth}
-                  </p>
-                  <p className="text-xs text-[--text-muted]">{new Date(batch.createdAt).toLocaleString("pt-BR")}</p>
+                <div className="flex items-center gap-3">
+                  {me?.role === "ADMIN" && (
+                    <input
+                      type="checkbox"
+                      checked={selectedIds.has(batch.id)}
+                      onChange={(e) => {
+                        setSelectedIds((prev) => {
+                          const next = new Set(prev);
+                          if (e.target.checked) next.add(batch.id); else next.delete(batch.id);
+                          return next;
+                        });
+                      }}
+                      className="h-4 w-4 shrink-0 rounded accent-brand"
+                      aria-label={`Selecionar import ${batch.fileName ?? batch.id}`}
+                    />
+                  )}
+                  <div>
+                    <p className="text-sm font-semibold text-foreground">
+                      {batch.fileName || "Arquivo sem nome"} — {batch.referenceMonth}
+                    </p>
+                    <p className="text-xs text-[--text-muted]">{new Date(batch.createdAt).toLocaleString("pt-BR")}</p>
+                  </div>
                 </div>
                 <div className="flex items-center gap-2">
                   <span

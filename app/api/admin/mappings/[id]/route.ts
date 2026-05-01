@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 
 import { requireAdmin } from "@/lib/auth/admin-guard";
+import { AuditAction, writeAuditLog } from "@/lib/audit";
 import { prisma } from "@/lib/prisma";
 
 type RouteContext = {
@@ -37,7 +38,7 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
 
   const existing = await prisma.accountMapping.findUnique({
     where: { id },
-    select: { id: true },
+    select: { id: true, dashboardField: true, matchType: true, codes: true, valueColumn: true, aggregation: true },
   });
   if (!existing) {
     return NextResponse.json({ error: "Mapeamento nao encontrado." }, { status: 404 });
@@ -55,6 +56,14 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
     select: MAPPING_SELECT,
   });
 
+  writeAuditLog({
+    userId: admin.id,
+    action: AuditAction.MAPPING_UPDATE,
+    entity: "AccountMapping",
+    entityId: id,
+    metadata: { dashboardField: existing.dashboardField, before: existing, after: parsed.data },
+  });
+
   return NextResponse.json({ mapping });
 }
 
@@ -67,13 +76,21 @@ export async function DELETE(request: NextRequest, context: RouteContext) {
 
   const existing = await prisma.accountMapping.findUnique({
     where: { id },
-    select: { id: true },
+    select: { id: true, dashboardField: true },
   });
   if (!existing) {
     return NextResponse.json({ error: "Mapeamento nao encontrado." }, { status: 404 });
   }
 
   await prisma.accountMapping.delete({ where: { id } });
+
+  writeAuditLog({
+    userId: admin.id,
+    action: AuditAction.MAPPING_DELETE,
+    entity: "AccountMapping",
+    entityId: id,
+    metadata: { dashboardField: existing.dashboardField },
+  });
 
   return new NextResponse(null, { status: 204 });
 }

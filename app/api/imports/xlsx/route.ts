@@ -115,7 +115,7 @@ export async function POST(request: NextRequest) {
           status: "DONE",
           NOT: { checksum },
         },
-        select: { id: true },
+        select: { id: true, sourceType: true },
       }),
       // Fetch company document for CNPJ validation only when the file contains a CNPJ
       parsedWorkbook.metadata?.cnpj
@@ -127,8 +127,13 @@ export async function POST(request: NextRequest) {
     ]);
 
     if (existingDoneBatch) {
+      const existingType = existingDoneBatch.sourceType === "RAZAO" ? "Razão" : "Balancete";
       return NextResponse.json(
-        { error: `O mes ${effectiveMonth} ja possui uma importacao concluida. Para substituir, exclua o import existente antes de reimportar.` },
+        {
+          error: `O mes ${effectiveMonth} ja possui uma importacao de ${existingType} concluida. Para substituir, exclua o import existente antes de reimportar.`,
+          conflictMonth: effectiveMonth,
+          existingSourceType: existingDoneBatch.sourceType,
+        },
         { status: 409 },
       );
     }
@@ -492,12 +497,15 @@ async function processRazaoImport({
     // Block if a DONE batch exists with a different checksum (different file for same month)
     const conflictBatch = await prisma.importBatch.findFirst({
       where: { companyId, referenceMonth: month, status: "DONE", NOT: { checksum } },
-      select: { id: true },
+      select: { id: true, sourceType: true },
     });
     if (conflictBatch) {
+      const existingType = conflictBatch.sourceType === "RAZAO" ? "Razão" : "Balancete";
       return NextResponse.json(
         {
-          error: `O mês ${month} já possui uma importação Razão concluída. Para substituir, exclua o import existente antes de reimportar.`,
+          error: `O mês ${month} já possui uma importação de ${existingType} concluída. Para substituir, exclua o import existente antes de reimportar.`,
+          conflictMonth: month,
+          existingSourceType: conflictBatch.sourceType,
         },
         { status: 409 },
       );

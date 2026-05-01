@@ -15,6 +15,9 @@ vi.mock("@/lib/company-access", () => ({
 vi.mock("@/lib/xlsx", () => ({
   parseXlsxBuffer: vi.fn(),
   applyAccountMappings: vi.fn(),
+  isRazaoFormat: vi.fn().mockReturnValue(false),
+  detectFileFormat: vi.fn().mockReturnValue("BALANCETE"),
+  parseRazaoBuffer: vi.fn(),
 }));
 
 vi.mock("@/lib/audit", () => ({

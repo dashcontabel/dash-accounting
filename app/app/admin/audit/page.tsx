@@ -13,6 +13,10 @@ type AuditAction =
   | "LOGIN"
   | "IMPORT_CREATE"
   | "IMPORT_DELETE"
+  | "IMPORT_BULK_DELETE"
+  | "MAPPING_CREATE"
+  | "MAPPING_UPDATE"
+  | "MAPPING_DELETE"
   | "USER_CREATE"
   | "USER_UPDATE"
   | "COMPANY_CREATE"
@@ -50,6 +54,10 @@ const ACTION_LABELS: Record<AuditAction, string> = {
   LOGIN: "Login",
   IMPORT_CREATE: "Importação",
   IMPORT_DELETE: "Exclusão de Importação",
+  IMPORT_BULK_DELETE: "Exclusão em Massa",
+  MAPPING_CREATE: "Criação de Mapeamento",
+  MAPPING_UPDATE: "Atualização de Mapeamento",
+  MAPPING_DELETE: "Exclusão de Mapeamento",
   USER_CREATE: "Criação de Usuário",
   USER_UPDATE: "Atualização de Usuário",
   COMPANY_CREATE: "Criação de Empresa",
@@ -61,6 +69,10 @@ const ACTION_COLORS: Record<AuditAction, string> = {
   LOGIN: "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300",
   IMPORT_CREATE: "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300",
   IMPORT_DELETE: "bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300",
+  IMPORT_BULK_DELETE: "bg-red-100 text-red-800 dark:bg-red-900/50 dark:text-red-300",
+  MAPPING_CREATE: "bg-teal-100 text-teal-700 dark:bg-teal-900/40 dark:text-teal-300",
+  MAPPING_UPDATE: "bg-cyan-100 text-cyan-700 dark:bg-cyan-900/40 dark:text-cyan-300",
+  MAPPING_DELETE: "bg-rose-100 text-rose-700 dark:bg-rose-900/40 dark:text-rose-300",
   USER_CREATE: "bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-300",
   USER_UPDATE: "bg-violet-100 text-violet-700 dark:bg-violet-900/40 dark:text-violet-300",
   COMPANY_CREATE: "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300",
@@ -102,7 +114,7 @@ export default function AuditLogPage() {
     async (currentPage: number) => {
       setIsLoading(true);
       try {
-        const params = new URLSearchParams({ page: String(currentPage), limit: "50" });
+        const params = new URLSearchParams({ page: String(currentPage), limit: "20" });
         if (filterAction) params.set("action", filterAction);
         if (filterFrom) params.set("from", new Date(filterFrom).toISOString());
         if (filterTo) {
@@ -384,29 +396,59 @@ export default function AuditLogPage() {
         </div>
 
         {/* Pagination */}
-        {pagination && pagination.totalPages > 1 && (
-          <div className="flex items-center justify-between">
+        {pagination && (
+          <div className="flex flex-wrap items-center justify-between gap-3">
             <p className="text-sm text-zinc-500 dark:text-zinc-400">
-              Página {pagination.page} de {pagination.totalPages}
+              {pagination.total.toLocaleString("pt-BR")} evento{pagination.total !== 1 ? "s" : ""}
+              {pagination.totalPages > 1 && (
+                <> — página {pagination.page} de {pagination.totalPages}</>
+              )}
             </p>
-            <div className="flex gap-2">
-              <button
-                type="button"
-                disabled={page === 1}
-                onClick={() => setPage((p) => p - 1)}
-                className="rounded-xl border border-zinc-200 px-3 py-1.5 text-sm font-medium text-zinc-700 transition hover:bg-zinc-50 disabled:opacity-40 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"
-              >
-                Anterior
-              </button>
-              <button
-                type="button"
-                disabled={page === pagination.totalPages}
-                onClick={() => setPage((p) => p + 1)}
-                className="rounded-xl border border-zinc-200 px-3 py-1.5 text-sm font-medium text-zinc-700 transition hover:bg-zinc-50 disabled:opacity-40 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"
-              >
-                Próxima
-              </button>
-            </div>
+            {pagination.totalPages > 1 && (
+              <div className="flex flex-wrap items-center gap-1">
+                <button
+                  type="button"
+                  disabled={page === 1}
+                  onClick={() => setPage((p) => p - 1)}
+                  className="rounded-xl border border-zinc-200 px-3 py-1.5 text-sm font-medium text-zinc-700 transition hover:bg-zinc-50 disabled:opacity-40 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"
+                >
+                  ← Anterior
+                </button>
+                {Array.from({ length: pagination.totalPages }, (_, i) => i + 1)
+                  .filter((p) => p === 1 || p === pagination.totalPages || Math.abs(p - page) <= 2)
+                  .reduce<(number | "...")[]>((acc, p, idx, arr) => {
+                    if (idx > 0 && (p as number) - (arr[idx - 1] as number) > 1) acc.push("...");
+                    acc.push(p);
+                    return acc;
+                  }, [])
+                  .map((p, idx) =>
+                    p === "..." ? (
+                      <span key={`ellipsis-${idx}`} className="px-1 text-sm text-zinc-400">…</span>
+                    ) : (
+                      <button
+                        key={p}
+                        type="button"
+                        onClick={() => setPage(p as number)}
+                        className={`rounded-xl border px-3 py-1.5 text-sm font-medium transition ${
+                          p === page
+                            ? "border-[#0f4c81] bg-[#0f4c81] text-white"
+                            : "border-zinc-200 text-zinc-700 hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"
+                        }`}
+                      >
+                        {p}
+                      </button>
+                    ),
+                  )}
+                <button
+                  type="button"
+                  disabled={page === pagination.totalPages}
+                  onClick={() => setPage((p) => p + 1)}
+                  className="rounded-xl border border-zinc-200 px-3 py-1.5 text-sm font-medium text-zinc-700 transition hover:bg-zinc-50 disabled:opacity-40 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"
+                >
+                  Próxima →
+                </button>
+              </div>
+            )}
           </div>
         )}
       </div>

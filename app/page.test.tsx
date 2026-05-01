@@ -45,6 +45,13 @@ describe("Home dashboard", () => {
         });
       }
 
+      if (url === "/api/dashboard/field-codes") {
+        return Promise.resolve({
+          ok: true,
+          json: vi.fn().mockResolvedValue({ fieldCodes: {} }),
+        });
+      }
+
       // /api/dashboard/summary - empty companies
       return Promise.resolve({
         ok: true,
@@ -126,6 +133,12 @@ describe("Home dashboard", () => {
         }
         if (url === "/api/context/active-company") {
           return Promise.resolve({ ok: true, json: vi.fn().mockResolvedValue({}) });
+        }
+        if (url === "/api/dashboard/field-codes") {
+          return Promise.resolve({
+            ok: true,
+            json: vi.fn().mockResolvedValue({ fieldCodes: {} }),
+          });
         }
         // /api/dashboard/summary — returns new multi-company format
         return Promise.resolve({

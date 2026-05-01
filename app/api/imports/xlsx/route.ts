@@ -7,7 +7,7 @@ import { getUserFromRequest } from "@/lib/auth";
 import { assertCompanyAccess } from "@/lib/company-access";
 import { prisma } from "@/lib/prisma";
 import { AuditAction, writeAuditLog } from "@/lib/audit";
-import { applyAccountMappings, detectFileFormat, parseXlsxBuffer } from "@/lib/xlsx";
+import { applyAccountMappings, detectFileFormat, isRazaoFormat, parseRazaoBuffer, parseXlsxBuffer } from "@/lib/xlsx";
 
 export const runtime = "nodejs";
 
@@ -79,6 +79,17 @@ export async function POST(request: NextRequest) {
 
     const fileBuffer = Buffer.from(await file.arrayBuffer());
     const checksum = createHash("sha256").update(fileBuffer).digest("hex");
+
+    // ── Razão Contábil branch (multi-month) ──────────────────────────────────
+    if (isRazaoFormat(fileBuffer)) {
+      return await processRazaoImport({
+        fileBuffer,
+        checksum,
+        fileName: file.name,
+        companyId: parsedForm.data.companyId,
+        userId: user.id,
+      });
+    }
 
     // Parse the file upfront to extract metadata (CNPJ, period) and validate the sheet
     const parsedWorkbook = parseXlsxBuffer(fileBuffer, file.name);
@@ -366,4 +377,249 @@ export async function POST(request: NextRequest) {
       { status: 500 },
     );
   }
+}
+
+// ─── Razão Contábil: multi-month import ──────────────────────────────────────
+
+async function processRazaoImport({
+  fileBuffer,
+  checksum,
+  fileName,
+  companyId,
+  userId,
+}: {
+  fileBuffer: Buffer;
+  checksum: string;
+  fileName: string;
+  companyId: string;
+  userId: string;
+}): Promise<NextResponse> {
+  const razao = parseRazaoBuffer(fileBuffer);
+
+  if (razao.months.length === 0) {
+    return NextResponse.json(
+      { error: "Arquivo Razão não contém lançamentos com datas reconhecíveis." },
+      { status: 422 },
+    );
+  }
+
+  // Validate CNPJ against company when available
+  if (razao.metadata.cnpj) {
+    const company = await prisma.company.findUnique({
+      where: { id: companyId },
+      select: { document: true },
+    });
+    const companyCnpj = company?.document?.replace(/\D/g, "");
+    if (companyCnpj && companyCnpj !== razao.metadata.cnpj) {
+      return NextResponse.json(
+        { error: "O CNPJ do arquivo não corresponde à empresa selecionada." },
+        { status: 422 },
+      );
+    }
+  }
+
+  // Fetch current mappings once — reused for all months
+  const mappings = await prisma.accountMapping.findMany({
+    orderBy: { createdAt: "asc" },
+    select: {
+      id: true,
+      dashboardField: true,
+      matchType: true,
+      codes: true,
+      valueColumn: true,
+      aggregation: true,
+      isCalculated: true,
+      formula: true,
+    },
+  });
+
+  const results: Array<{
+    referenceMonth: string;
+    batchId: string;
+    idempotent: boolean;
+    totalEntries: number;
+    totalAccounts: number;
+  }> = [];
+
+  for (const month of razao.months) {
+    const monthData = razao.byMonth[month]!;
+
+    // Check for idempotency: same file + same month already imported successfully
+    const existingBatch = await prisma.importBatch.findUnique({
+      where: {
+        companyId_referenceMonth_checksum: { companyId, referenceMonth: month, checksum },
+      },
+      select: { id: true, status: true },
+    });
+
+    if (existingBatch?.status === "DONE") {
+      // Re-apply current mappings against the already-stored ledger entries
+      const storedRows = await prisma.ledgerEntry.findMany({
+        where: { importBatchId: existingBatch.id },
+        select: { accountCode: true, accountName: true, debit: true, credit: true, balance: true, rawJson: true },
+      });
+      if (storedRows.length > 0 && mappings.length > 0) {
+        const parsedRows = storedRows.map((r) => ({
+          accountCode: r.accountCode,
+          description: r.accountName,
+          values: {
+            debito: Number(r.debit),
+            credito: Number(r.credit),
+            saldo_atual: Number(r.balance),
+            saldo_anterior:
+              typeof r.rawJson === "object" && r.rawJson !== null
+                ? ((r.rawJson as Record<string, unknown>).saldo_anterior as number ?? 0)
+                : 0,
+          },
+        }));
+        const freshResult = applyAccountMappings(parsedRows, mappings);
+        await prisma.dashboardMonthlySummary.upsert({
+          where: { companyId_referenceMonth: { companyId, referenceMonth: month } },
+          create: { companyId, referenceMonth: month, dataJson: freshResult.summary },
+          update: { dataJson: freshResult.summary },
+        });
+      }
+      results.push({
+        referenceMonth: month,
+        batchId: existingBatch.id,
+        idempotent: true,
+        totalEntries: monthData.entries.length,
+        totalAccounts: monthData.accountRows.length,
+      });
+      continue;
+    }
+
+    // Block if a DONE batch exists with a different checksum (different file for same month)
+    const conflictBatch = await prisma.importBatch.findFirst({
+      where: { companyId, referenceMonth: month, status: "DONE", NOT: { checksum } },
+      select: { id: true },
+    });
+    if (conflictBatch) {
+      return NextResponse.json(
+        {
+          error: `O mês ${month} já possui uma importação Razão concluída. Para substituir, exclua o import existente antes de reimportar.`,
+        },
+        { status: 409 },
+      );
+    }
+
+    const engineResult = applyAccountMappings(monthData.accountRows, mappings);
+
+    const batch = await prisma.importBatch.create({
+      data: {
+        companyId,
+        referenceMonth: month,
+        sourceType: "RAZAO",
+        status: "PROCESSING",
+        checksum,
+        fileName: fileName || null,
+        createdByUserId: userId,
+      },
+      select: { id: true },
+    });
+
+    await prisma.$transaction(async (tx) => {
+      // LedgerEntry rows — one per account, aggregated for this month
+      // (keeps recalculate-summaries and idempotency logic working unchanged)
+      if (monthData.accountRows.length > 0) {
+        await tx.ledgerEntry.createMany({
+          data: monthData.accountRows.map((row) => ({
+            importBatchId: batch.id,
+            companyId,
+            referenceMonth: month,
+            accountCode: row.accountCode,
+            accountName: row.description,
+            debit: row.values.debito,
+            credit: row.values.credito,
+            balance: row.values.saldo_atual,
+            rawJson: { saldo_anterior: row.values.saldo_anterior },
+          })),
+        });
+      }
+
+      // RazaoEntry rows — individual transactions for drill-down
+      if (monthData.entries.length > 0) {
+        for (let i = 0; i < monthData.entries.length; i += 500) {
+          await tx.razaoEntry.createMany({
+            data: monthData.entries.slice(i, i + 500).map((e) => ({
+              importBatchId: batch.id,
+              companyId,
+              referenceMonth: month,
+              entryDate: e.entryDate,
+              accountCode: e.accountCode,
+              accountName: e.accountName,
+              lot: e.lot,
+              counterpartCode: e.counterpartCode,
+              counterpartName: e.counterpartName,
+              description: e.description,
+              debit: e.debit,
+              credit: e.credit,
+              balance: e.balance,
+            })),
+          });
+        }
+      }
+
+      // Dashboard summary
+      await tx.dashboardMonthlySummary.upsert({
+        where: { companyId_referenceMonth: { companyId, referenceMonth: month } },
+        create: { companyId, referenceMonth: month, dataJson: engineResult.summary },
+        update: { dataJson: engineResult.summary },
+      });
+
+      // Unmapped accounts
+      if (engineResult.unmappedAccounts.length > 0) {
+        await tx.unmappedAccount.createMany({
+          data: engineResult.unmappedAccounts.map((row) => ({
+            importBatchId: batch.id,
+            accountCode: row.accountCode,
+            description: row.description || null,
+          })),
+        });
+      }
+
+      await tx.importBatch.update({
+        where: { id: batch.id },
+        data: {
+          status: "DONE",
+          totalRows: monthData.entries.length,
+          processedRows: monthData.entries.length,
+          totalsJson: {
+            summary: engineResult.summary,
+            totalEntries: monthData.entries.length,
+            totalAccounts: monthData.accountRows.length,
+            mappedAccounts: engineResult.mappedAccountCodes.length,
+            unmappedAccounts: engineResult.unmappedAccounts.length,
+          },
+          lastError: null,
+        },
+      });
+    });
+
+    writeAuditLog({
+      userId,
+      companyId,
+      action: AuditAction.IMPORT_CREATE,
+      entity: "ImportBatch",
+      entityId: batch.id,
+      metadata: { fileName, referenceMonth: month, sourceType: "RAZAO", totalEntries: monthData.entries.length },
+    });
+
+    results.push({
+      referenceMonth: month,
+      batchId: batch.id,
+      idempotent: false,
+      totalEntries: monthData.entries.length,
+      totalAccounts: monthData.accountRows.length,
+    });
+  }
+
+  return NextResponse.json(
+    {
+      sourceType: "RAZAO",
+      months: razao.months,
+      results,
+    },
+    { status: 201 },
+  );
 }

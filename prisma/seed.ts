@@ -20,8 +20,10 @@ async function main() {
 
   let adminUserId = existingUser?.id;
 
+  // Always hash and sync the password so re-running the seed fixes 401 issues
+  const passwordHash = await bcrypt.hash(password, 12);
+
   if (!adminUserId) {
-    const passwordHash = await bcrypt.hash(password, 12);
     const adminUser = await prisma.user.create({
       data: {
         email,
@@ -31,11 +33,14 @@ async function main() {
       },
       select: { id: true },
     });
-
     adminUserId = adminUser.id;
     console.log(`Admin created with email ${email}.`);
   } else {
-    console.log(`Admin with email ${email} already exists. Skipping creation.`);
+    await prisma.user.update({
+      where: { id: adminUserId },
+      data: { passwordHash },
+    });
+    console.log(`Admin password hash updated for ${email}.`);
   }
 
   const group = await prisma.group.upsert({
@@ -75,6 +80,49 @@ async function main() {
   });
 
   console.log("Seeded default group, company, and admin company access.");
+
+  // ── Account Mappings (mirrors production) ────────────────────────────────
+  // Always replace all mappings so local dev stays in sync with prod.
+  const PROD_MAPPINGS = [
+    { dashboardField: "FATURAMENTO",           matchType: "PREFIX" as const, codes: ["4.1.1"],                           valueColumn: "credito"      as const, aggregation: "SUM"     as const, isCalculated: false, formula: null },
+    { dashboardField: "RENDIMENTO_BRUTO",      matchType: "PREFIX" as const, codes: ["4.1.3"],                           valueColumn: "credito"      as const, aggregation: "SUM"     as const, isCalculated: false, formula: null },
+    { dashboardField: "NFS_RECEBIDAS",         matchType: "PREFIX" as const, codes: ["1.1.2"],                           valueColumn: "credito"      as const, aggregation: "SUM"     as const, isCalculated: false, formula: null },
+    { dashboardField: "LRA2_INVEST",           matchType: "LIST"   as const, codes: [],                                  valueColumn: "credito"      as const, aggregation: "SUM"     as const, isCalculated: false, formula: null },
+    { dashboardField: "LRA3_INVEST",           matchType: "LIST"   as const, codes: [],                                  valueColumn: "credito"      as const, aggregation: "SUM"     as const, isCalculated: false, formula: null },
+    { dashboardField: "B_VISTA_INVEST",        matchType: "LIST"   as const, codes: [],                                  valueColumn: "credito"      as const, aggregation: "SUM"     as const, isCalculated: false, formula: null },
+    { dashboardField: "TRAPICHE_INVEST",       matchType: "LIST"   as const, codes: [],                                  valueColumn: "credito"      as const, aggregation: "SUM"     as const, isCalculated: false, formula: null },
+    { dashboardField: "ALUGUEL",               matchType: "LIST"   as const, codes: [],                                  valueColumn: "credito"      as const, aggregation: "SUM"     as const, isCalculated: false, formula: null },
+    { dashboardField: "IMPOSTOS",              matchType: "PREFIX" as const, codes: ["3.2.2.03"],                        valueColumn: "debito"       as const, aggregation: "ABS_SUM" as const, isCalculated: false, formula: null },
+    { dashboardField: "IOF_IRRF",              matchType: "LIST"   as const, codes: ["3.2.2.05.004", "3.2.2.05.006"],   valueColumn: "debito"       as const, aggregation: "ABS_SUM" as const, isCalculated: false, formula: null },
+    { dashboardField: "LRA2_DESP",             matchType: "LIST"   as const, codes: [],                                  valueColumn: "debito"       as const, aggregation: "ABS_SUM" as const, isCalculated: false, formula: null },
+    { dashboardField: "LRA3_DESP",             matchType: "LIST"   as const, codes: [],                                  valueColumn: "debito"       as const, aggregation: "ABS_SUM" as const, isCalculated: false, formula: null },
+    { dashboardField: "B_VISTA_DESP",          matchType: "LIST"   as const, codes: [],                                  valueColumn: "debito"       as const, aggregation: "ABS_SUM" as const, isCalculated: false, formula: null },
+    { dashboardField: "TRAPICHE_DESP",         matchType: "LIST"   as const, codes: [],                                  valueColumn: "debito"       as const, aggregation: "ABS_SUM" as const, isCalculated: false, formula: null },
+    { dashboardField: "CONDOMINIO",            matchType: "LIST"   as const, codes: [],                                  valueColumn: "debito"       as const, aggregation: "ABS_SUM" as const, isCalculated: false, formula: null },
+    { dashboardField: "DEMAIS_DESPESAS",       matchType: "PREFIX" as const, codes: ["3.2.1"],                           valueColumn: "debito"       as const, aggregation: "ABS_SUM" as const, isCalculated: false, formula: null },
+    { dashboardField: "DISTRIB_LUCROS",        matchType: "LIST"   as const, codes: ["1.1.3.04.001"],                    valueColumn: "debito"       as const, aggregation: "SUM"     as const, isCalculated: false, formula: null },
+    { dashboardField: "SD_BANCARIO",           matchType: "PREFIX" as const, codes: ["1.1.1"],                           valueColumn: "saldo_atual"  as const, aggregation: "SUM"     as const, isCalculated: false, formula: null },
+    { dashboardField: "DISPONIBILIDADES",      matchType: "PREFIX" as const, codes: ["1.1.1"],                           valueColumn: "saldo_atual"  as const, aggregation: "SUM"     as const, isCalculated: false, formula: null },
+    { dashboardField: "ATIVO_CIRCULANTE",      matchType: "PREFIX" as const, codes: ["1.1"],                             valueColumn: "saldo_atual"  as const, aggregation: "SUM"     as const, isCalculated: false, formula: null },
+    { dashboardField: "PASSIVO_CIRCULANTE",    matchType: "PREFIX" as const, codes: ["2.1"],                             valueColumn: "saldo_atual"  as const, aggregation: "ABS_SUM" as const, isCalculated: false, formula: null },
+    { dashboardField: "ESTOQUES",              matchType: "LIST"   as const, codes: [],                                  valueColumn: "saldo_atual"  as const, aggregation: "SUM"     as const, isCalculated: false, formula: null },
+    { dashboardField: "REALIZAVEL_LONGO_PRAZO",matchType: "PREFIX" as const, codes: ["1.2.1"],                           valueColumn: "saldo_atual"  as const, aggregation: "SUM"     as const, isCalculated: false, formula: null },
+    { dashboardField: "PASSIVO_NAO_CIRCULANTE",matchType: "PREFIX" as const, codes: ["2.2"],                             valueColumn: "saldo_atual"  as const, aggregation: "ABS_SUM" as const, isCalculated: false, formula: null },
+    // Calculated fields
+    { dashboardField: "RENTABILIDADE",         matchType: "LIST"   as const, codes: [], valueColumn: "saldo_atual" as const, aggregation: "SUM" as const, isCalculated: true,  formula: "RENDIMENTO_BRUTO - IOF_IRRF" },
+    { dashboardField: "ALUGUEL_LIQUIDO",       matchType: "LIST"   as const, codes: [], valueColumn: "saldo_atual" as const, aggregation: "SUM" as const, isCalculated: true,  formula: "ALUGUEL - CONDOMINIO" },
+    { dashboardField: "RECEITAS_TOTAL",        matchType: "LIST"   as const, codes: [], valueColumn: "saldo_atual" as const, aggregation: "SUM" as const, isCalculated: true,  formula: "FATURAMENTO + RENDIMENTO_BRUTO + ALUGUEL" },
+    { dashboardField: "DESPESAS_TOTAL",        matchType: "LIST"   as const, codes: [], valueColumn: "saldo_atual" as const, aggregation: "SUM" as const, isCalculated: true,  formula: "IMPOSTOS + IOF_IRRF + LRA2_DESP + LRA3_DESP + B_VISTA_DESP + TRAPICHE_DESP + CONDOMINIO + DEMAIS_DESPESAS" },
+    { dashboardField: "RESULTADO",             matchType: "LIST"   as const, codes: [], valueColumn: "saldo_atual" as const, aggregation: "SUM" as const, isCalculated: true,  formula: "RECEITAS_TOTAL - DESPESAS_TOTAL" },
+  ] as const;
+
+  await prisma.$transaction(async (tx) => {
+    await tx.accountMapping.deleteMany();
+    await tx.accountMapping.createMany({
+      data: PROD_MAPPINGS.map((m) => ({ ...m, codes: m.codes as unknown as string[] })),
+    });
+  });
+  console.log(`Seeded ${PROD_MAPPINGS.length} account mappings.`);
 
   // ── Demo Razão data (sample transactions for Jan/2026) ───────────────────
   // Only seed when there is no existing RazaoEntry data for this company,

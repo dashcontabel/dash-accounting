@@ -213,7 +213,12 @@ export default function Home() {
   const [recalculating, setRecalculating] = useState(false);
   const [recalcMsg, setRecalcMsg] = useState<string | null>(null);
   const [seeding, setSeeding] = useState(false);
-  const [filtersOpen, setFiltersOpen] = useState(true);
+  const [filterModalOpen, setFilterModalOpen] = useState(false);
+  const [draftGranularity, setDraftGranularity] = useState<PeriodGranularity>("monthly");
+  const [draftYear, setDraftYear] = useState("");
+  const [draftMonth, setDraftMonth] = useState("");
+  const [draftRangeFrom, setDraftRangeFrom] = useState("01");
+  const [draftRangeTo, setDraftRangeTo] = useState("12");
   const [isSyncing, setIsSyncing] = useState(false);
   const [drillDown, setDrillDown] = useState<{ accountCode: string | null; label: string } | null>(null);
   const [mappingCodes, setMappingCodes] = useState<Record<string, string[]>>({});
@@ -644,6 +649,24 @@ export default function Home() {
     setIsSyncing(false);
   }
 
+  function openFilterModal() {
+    setDraftGranularity(granularity);
+    setDraftYear(selectedYear);
+    setDraftMonth(selectedMonth);
+    setDraftRangeFrom(rangeFrom);
+    setDraftRangeTo(rangeTo);
+    setFilterModalOpen(true);
+  }
+
+  function applyFilter() {
+    setGranularity(draftGranularity);
+    setSelectedYear(draftYear);
+    setSelectedMonth(draftMonth);
+    setRangeFrom(draftRangeFrom);
+    setRangeTo(draftRangeTo);
+    setFilterModalOpen(false);
+  }
+
   // Stale data warning only applies to single-company monthly view
   const isStale =
     !isMultiCompany &&
@@ -652,16 +675,45 @@ export default function Home() {
     Object.keys(activeSummary.dataJson).length < 4;
 
   return (
-    <AppShell role={userRole} email={userEmail} onLogout={handleLogout}>
+    <AppShell
+      role={userRole}
+      email={userEmail}
+      onLogout={handleLogout}
+      headerRight={
+        <span className="lg:hidden">
+          <NotificationsBell
+            notifications={notifications}
+            unreadCount={unreadCount}
+            onMarkRead={markRead}
+            onMarkAllRead={markAllRead}
+          />
+        </span>
+      }
+    >
 
-      {/* ── Toolbar: freshness + notifications ── */}
-      {selectedCompanyIds.length > 0 && (
-        <div className="mb-4 flex items-center justify-end gap-2">
+      {/* ── Compact toolbar ── */}
+      <div className="mb-3 flex items-center gap-2">
+        {/* Company selector */}
+        <div className="min-w-0 flex-1">
+          <MultiCompanySelect
+            companies={allowedCompanies}
+            selected={selectedCompanyIds}
+            onChange={(ids) => void handleSelectCompanies(ids)}
+            disabled={isSavingCompany}
+          />
+        </div>
+
+        {/* Sync status icon */}
+        {selectedCompanyIds.length > 0 && (
           <DataFreshnessBadge
             isStale={staleCompanyIds.length > 0}
             isSyncing={isSyncing}
             onSync={() => void handleSync()}
           />
+        )}
+
+        {/* Notifications bell — desktop only (mobile lives in header) */}
+        <div className="hidden lg:block">
           <NotificationsBell
             notifications={notifications}
             unreadCount={unreadCount}
@@ -669,105 +721,100 @@ export default function Home() {
             onMarkAllRead={markAllRead}
           />
         </div>
-      )}
 
-      {/* ── Filter bar ── */}
-      <div className="mb-6 rounded-2xl border border-zinc-100 bg-zinc-50/80 shadow-sm dark:border-zinc-700/50 dark:bg-zinc-800/50">
-        {/* Header / toggle */}
+        {/* Period filter toggle */}
         <button
           type="button"
-          onClick={() => setFiltersOpen((o) => !o)}
-          className="flex w-full items-center justify-between gap-3 px-4 py-3 sm:px-5"
+          onClick={openFilterModal}
+          title={selectedYear ? `Período: ${MONTH_LABELS[selectedMonth] ?? selectedMonth}/${selectedYear}` : "Filtro de período"}
+          className={`relative flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border transition-colors border-[--border] text-[--text-muted] hover:border-[#0f4c81]/40 hover:bg-[#0f4c81]/5 hover:text-[#0f4c81] dark:hover:border-blue-500/40 dark:hover:bg-blue-900/20 dark:hover:text-blue-400`}
         >
-          <span className="flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-zinc-500 dark:text-zinc-400">
-            <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2a1 1 0 01-.293.707L13 13.414V19a1 1 0 01-.553.894l-4 2A1 1 0 017 21v-7.586L3.293 6.707A1 1 0 013 6V4z" />
-            </svg>
-            Filtros
-            {!filtersOpen && (selectedCompanyIds.length > 0 || selectedYear) && (
-              <span className="ml-1 rounded-full bg-blue-100 px-2 py-0.5 text-[10px] font-semibold text-blue-700 dark:bg-blue-900/40 dark:text-blue-300">
-                {selectedCompanyIds.length > 0 ? (
-                  selectedCompanyIds.length === 1
-                    ? (allowedCompanies.find((c) => c.id === selectedCompanyIds[0])?.name ?? "1 empresa")
-                    : `${selectedCompanyIds.length} empresas`
-                ) : ""}
-                {selectedCompanyIds.length > 0 && selectedYear ? " · " : ""}
-                {selectedYear ? `${MONTH_LABELS[selectedMonth] ?? selectedMonth}/${selectedYear}` : ""}
-              </span>
-            )}
-          </span>
-          <svg
-            className={`h-4 w-4 shrink-0 text-zinc-400 transition-transform duration-200 dark:text-zinc-500 ${filtersOpen ? "rotate-180" : "rotate-0"}`}
-            fill="none"
-            stroke="currentColor"
-            strokeWidth={2}
-            viewBox="0 0 24 24"
-          >
-            <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+          <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
           </svg>
+          {selectedYear && (
+            <span className="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full bg-[#0f4c81] dark:bg-blue-500" />
+          )}
         </button>
+      </div>
 
-        {/* Collapsible body */}
-        {filtersOpen && (
-          <div className="border-t border-zinc-100 px-4 pb-4 pt-4 dark:border-zinc-700/50 sm:px-5 sm:pb-5">
-            <div className="grid gap-5 sm:grid-cols-2">
+      {/* ── Company context message ── */}
+      {contextMessage && (
+        <p className="mb-2 text-sm text-green-600 dark:text-green-400">{contextMessage}</p>
+      )}
 
-              {/* Empresas */}
-              <div className="flex min-w-0 flex-col gap-1.5">
-                <label className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-widest text-zinc-400 dark:text-zinc-500">
-                  <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5" />
-                  </svg>
-                  Empresas
-                </label>
-                <MultiCompanySelect
-                  companies={allowedCompanies}
-                  selected={selectedCompanyIds}
-                  onChange={(ids) => void handleSelectCompanies(ids)}
-                  disabled={isSavingCompany}
-                />
-              </div>
-
-              {/* Período */}
-              <div className="flex min-w-0 flex-col gap-1.5">
-                <label className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-widest text-zinc-400 dark:text-zinc-500">
-                  <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                  </svg>
-                  Período
-                </label>
-                <PeriodFilter
-                  granularity={granularity}
-                  year={selectedYear}
-                  month={selectedMonth}
-                  rangeFrom={rangeFrom}
-                  rangeTo={rangeTo}
-                  years={years}
-                  monthsForYear={monthsForYear}
-                  onGranularityChange={setGranularity}
-                  onYearChange={(y) => {
-                    setSelectedYear(y);
-                    const first = mergedSummaries.find((s) => s.referenceMonth.startsWith(y));
-                    if (first) setSelectedMonth(first.referenceMonth.slice(5, 7));
-                  }}
-                  onMonthChange={setSelectedMonth}
-                  onRangeFromChange={setRangeFrom}
-                  onRangeToChange={setRangeTo}
-                />
-              </div>
+      {/* ── Period filter modal ── */}
+      {filterModalOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 backdrop-blur-sm"
+          onClick={() => setFilterModalOpen(false)}
+        >
+          <div
+            className="w-full max-w-sm overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-2xl dark:border-zinc-700 dark:bg-zinc-900"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Modal header */}
+            <div className="flex items-center justify-between border-b border-zinc-100 px-5 py-4 dark:border-zinc-800">
+              <h2 className="flex items-center gap-2 text-sm font-bold text-zinc-800 dark:text-zinc-100">
+                <svg className="h-4 w-4 text-[#0f4c81] dark:text-blue-400" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                </svg>
+                Filtro de Período
+              </h2>
+              <button
+                type="button"
+                onClick={() => setFilterModalOpen(false)}
+                aria-label="Fechar"
+                className="flex h-7 w-7 items-center justify-center rounded-lg text-zinc-400 hover:bg-zinc-100 hover:text-zinc-600 dark:hover:bg-zinc-800 dark:hover:text-zinc-300"
+              >
+                <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
             </div>
 
-            {contextMessage ? (
-              <p className="mt-3 flex items-center gap-1.5 text-xs text-zinc-500 dark:text-zinc-400">
-                <svg className="h-3.5 w-3.5 text-emerald-500" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                </svg>
-                {contextMessage}
-              </p>
-            ) : null}
+            {/* Modal body */}
+            <div className="px-5 py-5">
+              <PeriodFilter
+                granularity={draftGranularity}
+                year={draftYear}
+                month={draftMonth}
+                rangeFrom={draftRangeFrom}
+                rangeTo={draftRangeTo}
+                years={years}
+                monthsForYear={monthsForYear}
+                onGranularityChange={setDraftGranularity}
+                onYearChange={(y) => {
+                  setDraftYear(y);
+                  const first = mergedSummaries.find((s) => s.referenceMonth.startsWith(y));
+                  if (first) setDraftMonth(first.referenceMonth.slice(5, 7));
+                }}
+                onMonthChange={setDraftMonth}
+                onRangeFromChange={setDraftRangeFrom}
+                onRangeToChange={setDraftRangeTo}
+              />
+            </div>
+
+            {/* Modal footer */}
+            <div className="flex items-center justify-end gap-2 border-t border-zinc-100 px-5 py-3 dark:border-zinc-800">
+              <button
+                type="button"
+                onClick={() => setFilterModalOpen(false)}
+                className="rounded-lg border border-zinc-200 px-4 py-2 text-xs font-medium text-zinc-600 hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={applyFilter}
+                className="rounded-lg bg-[#0f4c81] px-4 py-2 text-xs font-semibold text-white hover:bg-[#0d3d68] dark:bg-blue-600 dark:hover:bg-blue-700"
+              >
+                Aplicar
+              </button>
+            </div>
           </div>
-        )}
-      </div>
+        </div>
+      )}
 
       {/* ── Empty / Loading states ── */}
       {selectedCompanyIds.length === 0 ? (

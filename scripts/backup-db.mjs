@@ -17,6 +17,18 @@ const prisma = new PrismaClient();
 async function main() {
   console.log("🔒 Iniciando backup do banco de dados...\n");
 
+  // Fetch each table independently so a missing table (pre-migration) doesn't abort the whole backup
+  async function safeFetch(label, fn) {
+    try {
+      const rows = await fn();
+      console.log(`   ✓ ${label.padEnd(30)} ${rows.length} registros`);
+      return rows;
+    } catch {
+      console.warn(`   ⚠ ${label.padEnd(30)} tabela não encontrada (migration pendente)`);
+      return [];
+    }
+  }
+
   const [
     users,
     groups,
@@ -24,19 +36,25 @@ async function main() {
     userCompanies,
     importBatches,
     ledgerEntries,
+    razaoEntries,
     accountMappings,
     dashboardMonthlySummaries,
     unmappedAccounts,
+    auditLogs,
+    systemConfigs,
   ] = await Promise.all([
-    prisma.user.findMany(),
-    prisma.group.findMany(),
-    prisma.company.findMany(),
-    prisma.userCompany.findMany(),
-    prisma.importBatch.findMany(),
-    prisma.ledgerEntry.findMany(),
-    prisma.accountMapping.findMany(),
-    prisma.dashboardMonthlySummary.findMany(),
-    prisma.unmappedAccount.findMany(),
+    safeFetch("users",                      () => prisma.user.findMany()),
+    safeFetch("groups",                     () => prisma.group.findMany()),
+    safeFetch("companies",                  () => prisma.company.findMany()),
+    safeFetch("userCompanies",              () => prisma.userCompany.findMany()),
+    safeFetch("importBatches",              () => prisma.importBatch.findMany()),
+    safeFetch("ledgerEntries",              () => prisma.ledgerEntry.findMany()),
+    safeFetch("razaoEntries",               () => prisma.razaoEntry.findMany()),
+    safeFetch("accountMappings",            () => prisma.accountMapping.findMany()),
+    safeFetch("dashboardMonthlySummaries",  () => prisma.dashboardMonthlySummary.findMany()),
+    safeFetch("unmappedAccounts",           () => prisma.unmappedAccount.findMany()),
+    safeFetch("auditLogs",                  () => prisma.auditLog.findMany()),
+    safeFetch("systemConfigs",              () => prisma.systemConfig.findMany()),
   ]);
 
   const backup = {
@@ -48,9 +66,12 @@ async function main() {
       userCompanies: { count: userCompanies.length, rows: userCompanies },
       importBatches: { count: importBatches.length, rows: importBatches },
       ledgerEntries: { count: ledgerEntries.length, rows: ledgerEntries },
+      razaoEntries: { count: razaoEntries.length, rows: razaoEntries },
       accountMappings: { count: accountMappings.length, rows: accountMappings },
       dashboardMonthlySummaries: { count: dashboardMonthlySummaries.length, rows: dashboardMonthlySummaries },
       unmappedAccounts: { count: unmappedAccounts.length, rows: unmappedAccounts },
+      auditLogs: { count: auditLogs.length, rows: auditLogs },
+      systemConfigs: { count: systemConfigs.length, rows: systemConfigs },
     },
   };
 

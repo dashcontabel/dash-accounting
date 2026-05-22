@@ -12,6 +12,7 @@ type AppShellProps = {
   email: string | null;
   children: React.ReactNode;
   onLogout?: () => void;
+  headerRight?: React.ReactNode;
 };
 
 const OWNER_EMAIL = "owner@dashcontabil.com";
@@ -123,7 +124,7 @@ const navItems = [
   },
 ];
 
-export default function AppShell({ role, email, children, onLogout }: AppShellProps) {
+export default function AppShell({ role, email, children, onLogout, headerRight }: AppShellProps) {
   const pathname = usePathname();
   const { theme, toggleTheme } = useTheme();
   const [isMenuOpen, setIsMenuOpen] = useState(false);
@@ -311,7 +312,7 @@ export default function AppShell({ role, email, children, onLogout }: AppShellPr
 
           {/* Right */}
           <div className="flex items-center gap-2">
-            {/* Theme toggle in mobile header */}
+            {/* Theme toggle - mobile only */}
             <button
               type="button"
               onClick={toggleTheme}
@@ -320,6 +321,9 @@ export default function AppShell({ role, email, children, onLogout }: AppShellPr
             >
               {theme === "dark" ? <SunIcon /> : <MoonIcon />}
             </button>
+
+            {/* Header right slot (e.g. notifications bell) */}
+            {headerRight}
 
             {/* Desktop: user info */}
             <div className="hidden items-center gap-2.5 sm:flex">

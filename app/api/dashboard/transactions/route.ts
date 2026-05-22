@@ -62,15 +62,10 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "Acesso negado." }, { status: 403 });
   }
 
-  // Build the account-code filter: exact match if the code has no children,
-  // or prefix match to include sub-accounts (e.g. "1.1" returns "1.1.1.02.001")
+  // Build the account-code filter to match the same logic as the mapping engine:
+  // prefix "3.2.1" matches "3.2.1.0.1" AND "3.2.10.800.3" (plain startsWith, no trailing dot).
   const accountFilter = accountCode
-    ? {
-        OR: [
-          { accountCode },
-          { accountCode: { startsWith: accountCode + "." } },
-        ],
-      }
+    ? { accountCode: { startsWith: accountCode } }
     : {};
 
   const [entries, total] = await Promise.all([

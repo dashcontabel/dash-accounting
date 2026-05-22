@@ -2,13 +2,15 @@ import { read, utils } from "xlsx";
 
 import type { NormalizedValueColumn, ParsedAccountRow } from "./parser";
 
-// ─── Column indices (verified against real AMPM Razão files) ────────────────
-const COL_DATE = 0;          // Excel serial date
-const COL_LOT = 1;           // Lote
-const COL_COUNTERPART = 2;   // "code - name\ndescription"
-const COL_DEBIT = 6;         // Débito
-const COL_CREDIT = 7;        // Crédito
-const COL_YEAR_BALANCE = 11; // Saldo-Exercício (cumulative from opening)
+// ─── Column indices (verified against real Razão files) ─────────────────────
+// Header row layout: Data | Número | Histórico | | | | Cta.C.Part. | Débito | Crédito | Saldo | | | Saldo-Exercício |
+const COL_DATE = 0;               // Excel serial date
+const COL_LOT = 1;                // Número (lote)
+const COL_DESCRIPTION = 2;        // Histórico (description text / also "SALDO ANTERIOR" marker)
+const COL_COUNTERPART_CODE = 6;   // Cta.C.Part. (counterpart account code)
+const COL_DEBIT = 7;              // Débito
+const COL_CREDIT = 8;             // Crédito
+const COL_YEAR_BALANCE = 12;      // Saldo-Exercício (cumulative from opening)
 
 // ─── Public types ────────────────────────────────────────────────────────────
 
@@ -66,15 +68,29 @@ function excelSerialToDate(serial: number): Date {
   return new Date(new Date(1899, 11, 30).getTime() + serial * 86_400_000);
 }
 
-function parseAmount(raw: string): number {
-  if (!raw || raw.trim() === "" || raw.trim() === "-") return 0;
-  const clean = raw
+/**
+ * Parse a cell value as a currency amount.
+ * Accepts:
+ *  - JS number (from xlsx numeric cell) → returned directly
+ *  - Brazilian-format string "1.234,56" → dots stripped, comma→dot
+ *  - English-format string "1234.56" (no comma) → dot kept as decimal
+ *  - Parenthesised negative "(123,45)" → negated
+ */
+function parseAmount(raw: unknown): number {
+  if (typeof raw === "number") return Number.isFinite(raw) ? raw : 0;
+  if (raw === null || raw === undefined) return 0;
+  const s = String(raw).trim();
+  if (s === "" || s === "-") return 0;
+  const hasComma = s.includes(",");
+  const clean = s
     .replace(/[R$\s]/g, "")
-    .replace(/\./g, "")
+    // Only strip dots when they are Brazilian thousands separators
+    // (i.e. when there is also a comma present as the decimal separator)
+    .replace(hasComma ? /\./g : /(?!\d)\.(?!\d)/g, "")
     .replace(",", ".")
     .replace(/[()]/g, "");
   const n = parseFloat(clean);
-  return isNaN(n) ? 0 : raw.includes("(") ? -Math.abs(n) : n;
+  return isNaN(n) ? 0 : s.includes("(") ? -Math.abs(n) : n;
 }
 
 function extractMetadata(rows: string[][]): { cnpj: string | null; periodo: string | null } {
@@ -137,6 +153,8 @@ export function parseRazaoBuffer(buffer: Buffer): ParsedRazaoResult {
     defval: "",
   }) as unknown[][];
 
+  // rows: every cell as string — used for text pattern matching and metadata
+  // rawRows: original values — used for numeric extraction to preserve decimal precision
   const rows = rawRows.map((r) => r.map(formatCell));
   const { cnpj, periodo } = extractMetadata(rows);
 
@@ -154,7 +172,10 @@ export function parseRazaoBuffer(buffer: Buffer): ParsedRazaoResult {
   const blocks: AccountBlock[] = [];
   let current: AccountBlock | null = null;
 
-  for (const r of rows) {
+  for (let rowIdx = 0; rowIdx < rows.length; rowIdx++) {
+    const r = rows[rowIdx]!;
+    const rawR = rawRows[rowIdx]!;
+
     // Account header row: col 0 = "Conta:"
     if (r[COL_DATE]!.trim().toLowerCase() === "conta:") {
       if (current) blocks.push(current);
@@ -170,9 +191,9 @@ export function parseRazaoBuffer(buffer: Buffer): ParsedRazaoResult {
 
     if (!current) continue;
 
-    // Saldo Anterior line: col 2 = "SALDO ANTERIOR"
-    if (r[COL_COUNTERPART]!.trim().toLowerCase() === "saldo anterior") {
-      current.saldoAnterior = parseAmount(r[COL_YEAR_BALANCE]!);
+    // Saldo Anterior line: col 2 (Histórico) = "SALDO ANTERIOR"
+    if (r[COL_DESCRIPTION]!.trim().toLowerCase() === "saldo anterior") {
+      current.saldoAnterior = parseAmount(rawR[COL_YEAR_BALANCE]);
       continue;
     }
 
@@ -182,16 +203,15 @@ export function parseRazaoBuffer(buffer: Buffer): ParsedRazaoResult {
       const entryDate = excelSerialToDate(serial);
       const refMonth = monthFromDate(entryDate);
 
-      // Parse counterpart field: "code - name\ndescription"
-      const counterpartRaw = r[COL_COUNTERPART]!;
-      const [counterpartLine = "", descLine = ""] = counterpartRaw.split("\n");
-      const dashIdx = counterpartLine.indexOf(" - ");
-      const counterpartCode = dashIdx >= 0 ? counterpartLine.slice(0, dashIdx).trim() : null;
-      const counterpartName = dashIdx >= 0 ? counterpartLine.slice(dashIdx + 3).trim() : counterpartLine.trim() || null;
+      const raw = rawRows[rowIdx]!;
+      const debit = parseAmount(raw[COL_DEBIT]);
+      const credit = parseAmount(raw[COL_CREDIT]);
+      const balance = parseAmount(raw[COL_YEAR_BALANCE]);
 
-      const debit = parseAmount(r[COL_DEBIT]!);
-      const credit = parseAmount(r[COL_CREDIT]!);
-      const balance = parseAmount(r[COL_YEAR_BALANCE]!);
+      // Histórico (col 2) = description text; Cta.C.Part. (col 6) = counterpart code
+      const description = r[COL_DESCRIPTION]!.trim() || null;
+      const counterpartCodeRaw = r[COL_COUNTERPART_CODE]!.trim();
+      const counterpartCode = counterpartCodeRaw || null;
 
       current.entries.push({
         entryDate,
@@ -200,8 +220,8 @@ export function parseRazaoBuffer(buffer: Buffer): ParsedRazaoResult {
         accountName: current.name,
         lot: r[COL_LOT]!.trim() || null,
         counterpartCode: counterpartCode || null,
-        counterpartName: counterpartName || null,
-        description: descLine.trim() || null,
+        counterpartName: null,
+        description,
         debit,
         credit,
         balance,

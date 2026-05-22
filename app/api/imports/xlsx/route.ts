@@ -458,32 +458,78 @@ async function processRazaoImport({
     });
 
     if (existingBatch?.status === "DONE") {
-      // Re-apply current mappings against the already-stored ledger entries
-      const storedRows = await prisma.ledgerEntry.findMany({
-        where: { importBatchId: existingBatch.id },
-        select: { accountCode: true, accountName: true, debit: true, credit: true, balance: true, rawJson: true },
-      });
-      if (storedRows.length > 0 && mappings.length > 0) {
-        const parsedRows = storedRows.map((r) => ({
-          accountCode: r.accountCode,
-          description: r.accountName,
-          values: {
-            debito: Number(r.debit),
-            credito: Number(r.credit),
-            saldo_atual: Number(r.balance),
-            saldo_anterior:
-              typeof r.rawJson === "object" && r.rawJson !== null
-                ? ((r.rawJson as Record<string, unknown>).saldo_anterior as number ?? 0)
-                : 0,
-          },
-        }));
-        const freshResult = applyAccountMappings(parsedRows, mappings);
-        await prisma.dashboardMonthlySummary.upsert({
+      // Refresh ledger entries, razão entries and summary from the freshly-parsed data.
+      // This ensures that a re-upload of the same file after a parser fix corrects all
+      // stored rows and detail entries without requiring a manual delete + re-import.
+      const engineResult = applyAccountMappings(monthData.accountRows, mappings);
+
+      await prisma.$transaction(async (tx) => {
+        // Refresh ledger entries
+        await tx.ledgerEntry.deleteMany({ where: { importBatchId: existingBatch.id } });
+        if (monthData.accountRows.length > 0) {
+          await tx.ledgerEntry.createMany({
+            data: monthData.accountRows.map((row) => ({
+              importBatchId: existingBatch.id,
+              companyId,
+              referenceMonth: month,
+              accountCode: row.accountCode,
+              accountName: row.description,
+              debit: row.values.debito,
+              credit: row.values.credito,
+              balance: row.values.saldo_atual,
+              rawJson: { saldo_anterior: row.values.saldo_anterior },
+            })),
+          });
+        }
+
+        // Refresh razão entries (drill-down detail rows)
+        await tx.razaoEntry.deleteMany({ where: { importBatchId: existingBatch.id } });
+        if (monthData.entries.length > 0) {
+          for (let i = 0; i < monthData.entries.length; i += 500) {
+            await tx.razaoEntry.createMany({
+              data: monthData.entries.slice(i, i + 500).map((e) => ({
+                importBatchId: existingBatch.id,
+                companyId,
+                referenceMonth: month,
+                entryDate: e.entryDate,
+                accountCode: e.accountCode,
+                accountName: e.accountName,
+                lot: e.lot,
+                counterpartCode: e.counterpartCode,
+                counterpartName: e.counterpartName,
+                description: e.description,
+                debit: e.debit,
+                credit: e.credit,
+                balance: e.balance,
+              })),
+            });
+          }
+        }
+
+        // Refresh summary
+        await tx.dashboardMonthlySummary.upsert({
           where: { companyId_referenceMonth: { companyId, referenceMonth: month } },
-          create: { companyId, referenceMonth: month, dataJson: freshResult.summary },
-          update: { dataJson: freshResult.summary },
+          create: { companyId, referenceMonth: month, dataJson: engineResult.summary },
+          update: { dataJson: engineResult.summary },
         });
-      }
+
+        // Update batch totals
+        await tx.importBatch.update({
+          where: { id: existingBatch.id },
+          data: {
+            totalRows: monthData.entries.length,
+            processedRows: monthData.entries.length,
+            totalsJson: {
+              summary: engineResult.summary,
+              totalEntries: monthData.entries.length,
+              totalAccounts: monthData.accountRows.length,
+              mappedAccounts: engineResult.mappedAccountCodes.length,
+              unmappedAccounts: engineResult.unmappedAccounts.length,
+            },
+          },
+        });
+      });
+
       results.push({
         referenceMonth: month,
         batchId: existingBatch.id,

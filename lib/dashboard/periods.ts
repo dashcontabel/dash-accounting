@@ -1,9 +1,9 @@
 export type PeriodGranularity =
   | "monthly"
-  | "bimonthly_1"
-  | "bimonthly_2"
   | "quarterly_1"
   | "quarterly_2"
+  | "quarterly_3"
+  | "quarterly_4"
   | "semiannual_1"
   | "semiannual_2"
   | "annual"
@@ -11,10 +11,10 @@ export type PeriodGranularity =
 
 export const PERIOD_LABELS: Record<PeriodGranularity, string> = {
   monthly: "Mensal",
-  bimonthly_1: "1º Bimestre",
-  bimonthly_2: "2º Bimestre",
   quarterly_1: "1º Trimestre",
   quarterly_2: "2º Trimestre",
+  quarterly_3: "3º Trimestre",
+  quarterly_4: "4º Trimestre",
   semiannual_1: "1º Semestre",
   semiannual_2: "2º Semestre",
   annual: "Anual",
@@ -23,10 +23,10 @@ export const PERIOD_LABELS: Record<PeriodGranularity, string> = {
 
 // Fixed calendar month ranges [from, to] (1-indexed, inclusive)
 export const GRANULARITY_MONTH_RANGE: Partial<Record<PeriodGranularity, readonly [number, number]>> = {
-  bimonthly_1:  [1, 2],
-  bimonthly_2:  [3, 4],
   quarterly_1:  [1, 3],
   quarterly_2:  [4, 6],
+  quarterly_3:  [7, 9],
+  quarterly_4:  [10, 12],
   semiannual_1: [1, 6],
   semiannual_2: [7, 12],
   annual:       [1, 12],

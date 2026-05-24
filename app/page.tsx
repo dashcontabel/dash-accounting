@@ -15,6 +15,7 @@ import {
   PieChart,
   Pie,
   Cell,
+  LabelList,
   LineChart,
   Line,
   ReferenceLine,
@@ -25,6 +26,8 @@ import MultiCompanySelect from "./components/multi-company-select";
 import PeriodFilter from "./components/period-filter";
 import NotificationsBell from "./components/notifications-bell";
 import DataFreshnessBadge from "./components/data-freshness-badge";
+import CostCenterSection from "./components/cost-center-section";
+import TenantSection from "./components/tenant-section";
 // Heavy chart — loaded only on the client to reduce server bundle size
 const HeatmapChart = dynamic(() => import("./components/heatmap-chart"), { ssr: false });
 const RazaoTransactionsModal = dynamic(() => import("./components/razao-transactions-modal"), { ssr: false });
@@ -222,6 +225,7 @@ export default function Home() {
   const [isSyncing, setIsSyncing] = useState(false);
   const [drillDown, setDrillDown] = useState<{ accountCode: string | null; label: string } | null>(null);
   const [mappingCodes, setMappingCodes] = useState<Record<string, string[]>>({});
+  const [expenseDetailEntries, setExpenseDetailEntries] = useState<{ name: string; value: number; fill: string }[]>([]);
 
   // ── Freshness polling + notifications ──────────────────────────────────────
 
@@ -537,16 +541,91 @@ export default function Home() {
     };
   }, [companiesData, granularity, activePeriod, selectedYear]);
 
-  // Pie chart data — expense breakdown for active period
+  // 4 main expense groups
+  const mainExpenseData = useMemo(
+    () =>
+      [
+        { name: "Impostos", value: get(d, "IMPOSTOS"), fill: "#ef4444" },
+        { name: "IOF/IRRF", value: get(d, "IOF_IRRF"), fill: "#f97316" },
+        { name: "Demais Desp.", value: get(d, "DEMAIS_DESPESAS"), fill: "#eab308" },
+        { name: "Condomínio", value: get(d, "CONDOMINIO"), fill: "#a855f7" },
+      ].filter((i) => i.value > 0),
+    [d],
+  );
+  // Full breakdown (all sub-fields), used when only 1 main group has data
   const expensePieData = useMemo(
     () =>
       [
         { name: "Impostos", value: get(d, "IMPOSTOS"), fill: "#ef4444" },
         { name: "IOF/IRRF", value: get(d, "IOF_IRRF"), fill: "#f97316" },
-        { name: "Dmais Desp.", value: get(d, "DEMAIS_DESPESAS"), fill: "#eab308" },
+        { name: "Demais Desp.", value: get(d, "DEMAIS_DESPESAS"), fill: "#eab308" },
         { name: "Condomínio", value: get(d, "CONDOMINIO"), fill: "#a855f7" },
-      ].filter((i) => i.value > 0),
+        { name: "LRA2", value: get(d, "LRA2_DESP"), fill: "#3b82f6" },
+        { name: "LRA3", value: get(d, "LRA3_DESP"), fill: "#6366f1" },
+        { name: "B. Vista", value: get(d, "B_VISTA_DESP"), fill: "#06b6d4" },
+        { name: "Trapiche", value: get(d, "TRAPICHE_DESP"), fill: "#14b8a6" },
+      ]
+        .filter((i) => i.value > 0)
+        .sort((a, b) => b.value - a.value),
     [d],
+  );
+  // Chart data: 4 main groups when 2+ have data; full breakdown otherwise
+  const expensePieChartData = useMemo(
+    () => (mainExpenseData.length >= 2 ? mainExpenseData : expensePieData),
+    [mainExpenseData, expensePieData],
+  );
+  const expenseTotal = useMemo(
+    () => expensePieChartData.reduce((s, x) => s + x.value, 0),
+    [expensePieChartData],
+  );
+
+  // Fetch individual ledger entries when only one main expense group has data
+  useEffect(() => {
+    const PALETTE = ["#ef4444","#f97316","#eab308","#22c55e","#3b82f6","#8b5cf6","#06b6d4","#f43f5e","#14b8a6","#a855f7"];
+    const KEY_MAP: Record<string, string> = {
+      "Impostos": "IMPOSTOS", "IOF/IRRF": "IOF_IRRF",
+      "Demais Desp.": "DEMAIS_DESPESAS", "Condomínio": "CONDOMINIO",
+    };
+    if (mainExpenseData.length !== 1 || !canDrillDown || !selectedCompanyIds[0] || !selectedYear || !selectedMonth) {
+      setExpenseDetailEntries([]);
+      return;
+    }
+    const categoryKey = KEY_MAP[mainExpenseData[0]!.name];
+    const accountCode = categoryKey ? mappingCodes[categoryKey]?.[0] : undefined;
+    if (!accountCode) { setExpenseDetailEntries([]); return; }
+    let cancelled = false;
+    const params = new URLSearchParams({
+      companyId: selectedCompanyIds[0],
+      referenceMonth: `${selectedYear}-${selectedMonth}`,
+      accountCode,
+    });
+    fetch(`/api/dashboard/transactions?${params.toString()}`)
+      .then((r) => r.json())
+      .then((data: { entries?: { description: string | null; debit: number }[] }) => {
+        if (cancelled) return;
+        setExpenseDetailEntries(
+          (data.entries ?? [])
+            .filter((e) => e.debit > 0)
+            .map((e, i) => ({
+              name: (e.description ?? "—").replace(/^VR (?:REF A |ENVIADO AO SR )/i, "").slice(0, 26).trim(),
+              value: e.debit,
+              fill: PALETTE[i % PALETTE.length]!,
+            }))
+        );
+      })
+      .catch(() => { if (!cancelled) setExpenseDetailEntries([]); });
+    return () => { cancelled = true; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [canDrillDown, selectedCompanyIds[0], selectedYear, selectedMonth, mainExpenseData.length, mainExpenseData[0]?.name, mappingCodes]);
+
+  // Active pie data — individual entries when single-group and loaded, groups otherwise
+  const activePieData = useMemo(
+    () => (mainExpenseData.length === 1 && expenseDetailEntries.length > 0 ? expenseDetailEntries : expensePieChartData),
+    [mainExpenseData.length, expenseDetailEntries, expensePieChartData],
+  );
+  const activePieTotal = useMemo(
+    () => activePieData.reduce((s, x) => s + x.value, 0),
+    [activePieData],
   );
 
   // ── Handlers ─────────────────────────────────────────────────────────────
@@ -902,378 +981,395 @@ export default function Home() {
                   </>
                 )}
               </p>
-              {!isMultiCompany && granularity === "monthly" && (
-                <button
-                  onClick={() => void handleRecalculate()}
-                  disabled={recalculating}
-                  className="flex items-center gap-1.5 rounded-lg border border-zinc-200 bg-white px-3 py-1.5 text-xs font-medium text-zinc-600 shadow-sm transition hover:border-[#0f4c81]/40 hover:bg-[#f5f8fc] hover:text-[#0f4c81] disabled:opacity-50 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:border-blue-500/40 dark:hover:bg-blue-900/20 dark:hover:text-blue-400"
-                >
-                  <svg className={`h-3.5 w-3.5 ${recalculating ? "animate-spin" : ""}`} fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                  </svg>
-                  {recalculating ? "Recalculando..." : "Recalcular período"}
-                </button>
-              )}
+              <div className="flex items-center gap-2">
+                {!isMultiCompany && granularity === "monthly" && (
+                  <button
+                    onClick={() => void handleRecalculate()}
+                    disabled={recalculating}
+                    className="flex items-center gap-1.5 rounded-lg border border-zinc-200 bg-white px-3 py-1.5 text-xs font-medium text-zinc-600 shadow-sm transition hover:border-[#0f4c81]/40 hover:bg-[#f5f8fc] hover:text-[#0f4c81] disabled:opacity-50 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:border-blue-500/40 dark:hover:bg-blue-900/20 dark:hover:text-blue-400"
+                  >
+                    <svg className={`h-3.5 w-3.5 ${recalculating ? "animate-spin" : ""}`} fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                    </svg>
+                    {recalculating ? "Recalculando..." : "Recalcular período"}
+                  </button>
+                )}
+              </div>
             </div>
           )}
           {recalcMsg ? (
             <p className="mt-1 text-right text-xs text-zinc-500 dark:text-zinc-400">{recalcMsg}</p>
           ) : null}
 
-          {/* ══ RESULTADO SUMMARY BAR ══ */}
-          <div className="mt-6 grid gap-4 sm:grid-cols-3">
-            <div className={`col-span-1 flex flex-col justify-center rounded-2xl border-2 p-5 ${
-              get(d, "RESULTADO") >= 0
-                ? "border-emerald-200 bg-emerald-50 dark:border-emerald-800/50 dark:bg-emerald-950/40"
-                : "border-red-200 bg-red-50 dark:border-red-800/50 dark:bg-red-950/40"
-            }`}>
-              <p className="text-[11px] font-bold uppercase tracking-widest text-zinc-400 dark:text-zinc-500">Resultado do Período</p>
-              <p className={`mt-2 min-w-0 truncate text-xl font-extrabold sm:text-2xl ${
-                get(d, "RESULTADO") >= 0 ? "text-emerald-700 dark:text-emerald-400" : "text-red-700 dark:text-red-400"
-              }`}>
-                {formatCurrency(get(d, "RESULTADO"))}
-              </p>
-              <p className={`mt-1 text-xs font-semibold ${
-                get(d, "RESULTADO") >= 0 ? "text-emerald-500" : "text-red-500"
-              }`}>
-                {get(d, "RESULTADO") >= 0 ? "▲ Superávit" : "▼ Déficit"}
-              </p>
-            </div>
-            <KpiCard label="Total de Receitas" value={get(d, "RECEITAS_TOTAL")} color="green" icon={Icons.trending} />
-            <KpiCard label="Total de Despesas" value={get(d, "DESPESAS_TOTAL")} color="red" icon={Icons.tax} />
+          {/* ── Row 1: KPI Cards principais ──────────────────────────── */}
+                    <div className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
+                      <KpiCard label="Faturamento" value={get(d, "FATURAMENTO")} color="green"
+                        sub="NFs emitidas" icon={Icons.invoice}
+                        onDrillDown={canDrillDown && mappingCodes["FATURAMENTO"]?.[0] ? () => setDrillDown({ accountCode: mappingCodes["FATURAMENTO"][0]!, label: "Faturamento" }) : undefined} />
+                      <KpiCard label="NFs Recebidas" value={get(d, "NFS_RECEBIDAS")} color="teal"
+                        sub="Pagamentos recebidos" icon={Icons.invoice}
+                        onDrillDown={canDrillDown && mappingCodes["NFS_RECEBIDAS"]?.[0] ? () => setDrillDown({ accountCode: mappingCodes["NFS_RECEBIDAS"][0]!, label: "NFs Recebidas" }) : undefined} />
+                      <KpiCard label="Rentabilidade" value={get(d, "RENTABILIDADE")} color="teal"
+                        sub="Rend. bruto − IOF/IRRF" icon={Icons.trending} />
+                      <KpiCard label="Rendimento Bruto" value={get(d, "RENDIMENTO_BRUTO")} color="blue"
+                        sub="Aplicações financeiras" icon={Icons.chart}
+                        onDrillDown={canDrillDown && mappingCodes["RENDIMENTO_BRUTO"]?.[0] ? () => setDrillDown({ accountCode: mappingCodes["RENDIMENTO_BRUTO"][0]!, label: "Rendimento Bruto" }) : undefined} />
+                      <KpiCard label="Saldo Disponível" value={get(d, "SD_BANCARIO")} color="purple"
+                        sub="Soma de todas as contas" icon={Icons.bank}
+                        onDrillDown={canDrillDown && mappingCodes["SD_BANCARIO"]?.[0] ? () => setDrillDown({ accountCode: mappingCodes["SD_BANCARIO"][0]!, label: "Saldo Bancário" }) : undefined} />
           </div>
 
-          {/* ══ ANÁLISE ANUAL GROUP ══ */}
-          <div className="mt-5 rounded-2xl border border-zinc-300 bg-zinc-500/10 p-3 dark:border-zinc-700/40 dark:bg-zinc-800/20 sm:p-5 lg:p-6">
-            <div className="mb-4 flex items-center gap-2">
-              <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-blue-100 text-blue-600 dark:bg-blue-900/50 dark:text-blue-400">
-                {Icons.chart}
-              </span>
-              <h2 className="text-sm font-bold text-zinc-700 dark:text-zinc-200">
-                Análise — {selectedYear}
-                {granularity !== "monthly" && (
-                  <span className="ml-2 rounded-md bg-blue-100 px-1.5 py-0.5 text-[10px] font-semibold text-blue-700 dark:bg-blue-900/40 dark:text-blue-300">
-                    {PERIOD_LABELS[granularity]}
-                  </span>
-                )}
-                {isMultiCompany && (
-                  <span className="ml-2 rounded-md bg-purple-100 px-1.5 py-0.5 text-[10px] font-semibold text-purple-700 dark:bg-purple-900/40 dark:text-purple-300">
-                    Consolidado
-                  </span>
-                )}
-              </h2>
-              <div className="ml-2 h-px flex-1 bg-zinc-200 dark:bg-zinc-700" />
-            </div>
+          {/* ── Row 2: Centro de Custo ──────────────────────────────────── */}
+          {canDrillDown && selectedCompanyIds.length === 1 && (
+                    <CostCenterSection
+                      companyId={selectedCompanyIds[0]!}
+                      referenceMonth={`${selectedYear}-${selectedMonth}`}
+            />
+          )}
 
-            <div className="grid grid-cols-1 gap-3 sm:gap-4 lg:grid-cols-5">
-              {/* Bar chart — single company: merged Receitas × Despesas / multi-company: per-company */}
-              <div className="rounded-xl border border-zinc-100 bg-white p-3 dark:border-zinc-700/50 dark:bg-zinc-900/50 sm:p-4 lg:col-span-3">
-                {!isMultiCompany ? (
-                  <>
-                    <p className="mb-3 text-xs font-semibold text-zinc-500 dark:text-zinc-400">Receitas × Despesas por período</p>
-                    {chartSeries.length > 0 ? (
-                      <ResponsiveContainer width="100%" height={220}>
-                        <BarChart data={chartSeries} barCategoryGap="28%" barGap={2} margin={{ left: -4, right: 4 }}>
-                          <CartesianGrid strokeDasharray="3 3" stroke={chartTheme.grid} vertical={false} />
-                          <XAxis dataKey="period" tick={{ fontSize: 10, fill: chartTheme.tick }} axisLine={false} tickLine={false} interval="preserveStartEnd" />
-                          <YAxis tickFormatter={formatCurrencyShort} width={52} tick={{ fontSize: 10, fill: chartTheme.tick }} axisLine={false} tickLine={false} />
-                          <Tooltip formatter={currencyTooltipFormatter} contentStyle={{ fontSize: 12, borderRadius: 10, border: `1px solid ${chartTheme.tooltip.border}`, background: chartTheme.tooltip.background, boxShadow: "0 4px 12px rgba(0,0,0,.15)" }} labelStyle={{ fontWeight: 600, color: chartTheme.tooltip.label }} />
-                          <Legend wrapperStyle={{ fontSize: 11, paddingTop: 8 }} iconSize={10} />
-                          <Bar dataKey="Receitas" fill="#10b981" radius={[4, 4, 0, 0]} />
-                          <Bar dataKey="Despesas" fill="#ef4444" radius={[4, 4, 0, 0]} />
-                          <ReferenceLine y={0} stroke={chartTheme.grid} />
-                        </BarChart>
-                      </ResponsiveContainer>
-                    ) : (
-                      <p className="py-8 text-center text-sm text-zinc-400 dark:text-zinc-500">Sem dados no ano selecionado.</p>
-                    )}
-                  </>
-                ) : (
-                  <>
-                    {/* Shared legend — rendered once in HTML above both charts */}
-                    <div className="mb-3 grid grid-cols-2 gap-x-4 gap-y-1.5 md:flex md:flex-wrap md:gap-x-4 md:gap-y-1.5">
-                      {companiesData.map((company, i) => (
-                        <span key={company.companyId} className="flex min-w-0 items-center gap-1.5">
-                          <span
-                            className="h-2 w-2 shrink-0 rounded-full"
-                            style={{ background: COMPANY_COLORS[i % COMPANY_COLORS.length] }}
-                          />
-                          <span className="max-w-30 truncate text-[10px] text-zinc-500 dark:text-zinc-400 sm:max-w-40">
-                            {company.companyName}
-                          </span>
+          {/* ── Row 3: Despesas | Receitas | Resultado | Distribuição ──── */}
+          <div className="mt-4 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+                      <div className="flex flex-col rounded-2xl border-2 border-red-200 bg-red-50 p-6 dark:border-red-800/50 dark:bg-red-950/40">
+                        <p className="text-[11px] font-bold uppercase tracking-widest text-zinc-400 dark:text-zinc-500">Total de Despesas</p>
+                        <p className="mt-2 min-w-0 truncate text-2xl font-extrabold text-red-700 sm:text-3xl dark:text-red-400">
+                          {formatCurrency(get(d, "DESPESAS_TOTAL"))}
+                        </p>
+                      </div>
+                      <div className="flex flex-col rounded-2xl border-2 border-emerald-200 bg-emerald-50 p-6 dark:border-emerald-800/50 dark:bg-emerald-950/40">
+                        <p className="text-[11px] font-bold uppercase tracking-widest text-zinc-400 dark:text-zinc-500">Total de Receitas</p>
+                        <p className="mt-2 min-w-0 truncate text-2xl font-extrabold text-emerald-700 sm:text-3xl dark:text-emerald-400">
+                          {formatCurrency(get(d, "RECEITAS_TOTAL"))}
+                        </p>
+                      </div>
+                      <div className={`flex flex-col rounded-2xl border-2 p-6 ${
+                        get(d, "RESULTADO") >= 0
+                          ? "border-emerald-200 bg-emerald-50 dark:border-emerald-800/50 dark:bg-emerald-950/40"
+                          : "border-red-200 bg-red-50 dark:border-red-800/50 dark:bg-red-950/40"
+                      }`}>
+                        <p className="text-[11px] font-bold uppercase tracking-widest text-zinc-400 dark:text-zinc-500">Resultado do Período</p>
+                        <p className={`mt-2 min-w-0 truncate text-2xl font-extrabold sm:text-3xl ${
+                          get(d, "RESULTADO") >= 0 ? "text-emerald-700 dark:text-emerald-400" : "text-red-700 dark:text-red-400"
+                        }`}>
+                          {formatCurrency(get(d, "RESULTADO"))}
+                        </p>
+                        <p className={`mt-1 text-sm font-semibold ${
+                          get(d, "RESULTADO") >= 0 ? "text-emerald-500" : "text-red-500"
+                        }`}>
+                          {get(d, "RESULTADO") >= 0 ? "▲ Superávit" : "▼ Déficit"}
+                        </p>
+                      </div>
+                      <div className="flex flex-col rounded-2xl border-2 border-amber-200 bg-amber-50 p-6 dark:border-amber-800/50 dark:bg-amber-950/40">
+                        <p className="text-[11px] font-bold uppercase tracking-widest text-zinc-400 dark:text-zinc-500">Distribuição de Lucros</p>
+                        <p className="mt-2 min-w-0 truncate text-2xl font-extrabold text-amber-700 sm:text-3xl dark:text-amber-400">
+                          {formatCurrency(get(d, "DISTRIB_LUCROS"))}
+                        </p>
+                      </div>
+          </div>
+
+          {/* ── Análise Anual ─────────────────────────────────────────── */}
+                    <div className="mt-5 rounded-2xl border border-zinc-300 bg-zinc-500/10 p-3 dark:border-zinc-700/40 dark:bg-zinc-800/20 sm:p-5 lg:p-6">
+
+                      {/* ── Locatários ───────────────────────────────────── */}
+                      {!isMultiCompany && selectedCompanyIds.length === 1 && selectedYear && (
+                        <TenantSection
+                          companyId={selectedCompanyIds[0]!}
+                          year={selectedYear}
+                        />
+                      )}
+
+                      <div className="mb-4 mt-5 flex items-center gap-2">
+                        <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-blue-100 text-blue-600 dark:bg-blue-900/50 dark:text-blue-400">
+                          {Icons.chart}
                         </span>
-                      ))}
-                    </div>
-
-                    <p className="mb-2 text-xs font-semibold text-zinc-500 dark:text-zinc-400">Receitas por empresa</p>
-                    {comparativeSeries.length > 0 ? (
-                      <ResponsiveContainer width="100%" height={160}>
-                        <BarChart data={comparativeSeries} barCategoryGap="22%" barGap={2} margin={{ left: -4, right: 4 }}>
-                          <CartesianGrid strokeDasharray="3 3" stroke={chartTheme.grid} vertical={false} />
-                          <XAxis dataKey="period" tick={{ fontSize: 10, fill: chartTheme.tick }} axisLine={false} tickLine={false} interval="preserveStartEnd" />
-                          <YAxis tickFormatter={formatCurrencyShort} width={52} tick={{ fontSize: 10, fill: chartTheme.tick }} axisLine={false} tickLine={false} />
-                          <Tooltip formatter={currencyTooltipFormatter} contentStyle={{ fontSize: 12, borderRadius: 10, border: `1px solid ${chartTheme.tooltip.border}`, background: chartTheme.tooltip.background, boxShadow: "0 4px 12px rgba(0,0,0,.15)" }} labelStyle={{ fontWeight: 600, color: chartTheme.tooltip.label }} />
-                          {companiesData.map((company, i) => (
-                            <Bar key={company.companyId} dataKey={company.companyName} fill={COMPANY_COLORS[i % COMPANY_COLORS.length]} radius={[4, 4, 0, 0]} />
-                          ))}
-                        </BarChart>
-                      </ResponsiveContainer>
-                    ) : (
-                      <p className="py-4 text-center text-sm text-zinc-400 dark:text-zinc-500">Sem dados no período.</p>
-                    )}
-                    <p className="mb-2 mt-4 text-xs font-semibold text-zinc-500 dark:text-zinc-400">Despesas por empresa</p>
-                    {comparativeDespesasSeries.length > 0 ? (
-                      <ResponsiveContainer width="100%" height={160}>
-                        <BarChart data={comparativeDespesasSeries} barCategoryGap="22%" barGap={2} margin={{ left: -4, right: 4 }}>
-                          <CartesianGrid strokeDasharray="3 3" stroke={chartTheme.grid} vertical={false} />
-                          <XAxis dataKey="period" tick={{ fontSize: 10, fill: chartTheme.tick }} axisLine={false} tickLine={false} interval="preserveStartEnd" />
-                          <YAxis tickFormatter={formatCurrencyShort} width={52} tick={{ fontSize: 10, fill: chartTheme.tick }} axisLine={false} tickLine={false} />
-                          <Tooltip formatter={currencyTooltipFormatter} contentStyle={{ fontSize: 12, borderRadius: 10, border: `1px solid ${chartTheme.tooltip.border}`, background: chartTheme.tooltip.background, boxShadow: "0 4px 12px rgba(0,0,0,.15)" }} labelStyle={{ fontWeight: 600, color: chartTheme.tooltip.label }} />
-                          {companiesData.map((company, i) => (
-                            <Bar key={company.companyId} dataKey={company.companyName} fill={COMPANY_COLORS[i % COMPANY_COLORS.length]} radius={[4, 4, 0, 0]} />
-                          ))}
-                        </BarChart>
-                      </ResponsiveContainer>
-                    ) : (
-                      <p className="py-4 text-center text-sm text-zinc-400 dark:text-zinc-500">Sem dados no período.</p>
-                    )}
-                  </>
-                )}
-              </div>
-
-              {/* Pie chart */}
-              <div className="flex flex-col rounded-xl border border-zinc-100 bg-white p-3 dark:border-zinc-700/50 dark:bg-zinc-900/50 sm:p-4 lg:col-span-2">
-                <p className="mb-3 text-xs font-semibold text-zinc-500 dark:text-zinc-400">Composição das despesas</p>
-                {expensePieData.length > 0 ? (
-                  <div className="flex flex-1 flex-col gap-4">
-                    <div className="h-52 w-full sm:h-64 lg:h-72">
-                      <ResponsiveContainer width="100%" height="100%">
-                        <PieChart>
-                          <Pie
-                            data={expensePieData}
-                            cx="50%"
-                            cy="50%"
-                            innerRadius="38%"
-                            outerRadius="62%"
-                            paddingAngle={3}
-                            dataKey="value"
-                          >
-                            {expensePieData.map((entry, index) => (
-                              <Cell key={index} fill={entry.fill} />
-                            ))}
-                          </Pie>
-                          <Tooltip
-                            formatter={currencyTooltipFormatter}
-                            contentStyle={{ fontSize: 12, borderRadius: 10, border: `1px solid ${chartTheme.tooltip.border}`, background: chartTheme.tooltip.background }}
-                            labelStyle={{ color: chartTheme.tooltip.label }}
-                          />
-                        </PieChart>
-                      </ResponsiveContainer>
-                    </div>
-                    <ul className="mt-auto w-full space-y-2">
-                      {expensePieData.map((item) => {
-                        const total = expensePieData.reduce((s, x) => s + x.value, 0);
-                        const pct = total > 0 ? ((item.value / total) * 100).toFixed(1) : "0.0";
-                        return (
-                          <li key={item.name} className="flex items-center gap-2 text-xs">
-                            <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: item.fill }} />
-                            <span className="flex-1 text-zinc-600 dark:text-zinc-400">{item.name}</span>
-                            <span className="tabular-nums text-zinc-400 dark:text-zinc-500">{pct}%</span>
-                            <span className="tabular-nums font-medium text-zinc-700 dark:text-zinc-200">
-                              {formatCurrencyShort(item.value)}
+                        <h2 className="text-sm font-bold text-zinc-700 dark:text-zinc-200">
+                          Análise — {selectedYear}
+                          {granularity !== "monthly" && (
+                            <span className="ml-2 rounded-md bg-blue-100 px-1.5 py-0.5 text-[10px] font-semibold text-blue-700 dark:bg-blue-900/40 dark:text-blue-300">
+                              {PERIOD_LABELS[granularity]}
                             </span>
-                          </li>
-                        );
-                      })}
-                    </ul>
-                  </div>
-                ) : (
-                  <p className="py-8 text-center text-sm text-zinc-400 dark:text-zinc-500">Sem despesas no período.</p>
-                )}
-              </div>
-            </div>
+                          )}
+                          {isMultiCompany && (
+                            <span className="ml-2 rounded-md bg-purple-100 px-1.5 py-0.5 text-[10px] font-semibold text-purple-700 dark:bg-purple-900/40 dark:text-purple-300">
+                              Consolidado
+                            </span>
+                          )}
+                        </h2>
+                        <div className="ml-2 h-px flex-1 bg-zinc-200 dark:bg-zinc-700" />
+                      </div>
 
-            {/* Line chart — resultado trend */}
-            {trendSeries.length > 1 && (
-              <div className="mt-4 rounded-xl border border-zinc-100 bg-white p-4 dark:border-zinc-700/50 dark:bg-zinc-900/50">
-                <p className="mb-3 text-xs font-semibold text-zinc-500 dark:text-zinc-400">Tendência do resultado</p>
-                <ResponsiveContainer width="100%" height={170}>
-                  <LineChart data={trendSeries} margin={{ left: -4, right: 4 }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke={chartTheme.grid} vertical={false} />
-                    <XAxis dataKey="period" tick={{ fontSize: 10, fill: chartTheme.tick }} axisLine={false} tickLine={false} interval="preserveStartEnd" />
-                    <YAxis tickFormatter={formatCurrencyShort} width={52} tick={{ fontSize: 10, fill: chartTheme.tick }} axisLine={false} tickLine={false} />
-                    <Tooltip formatter={currencyTooltipFormatter} contentStyle={{ fontSize: 12, borderRadius: 10, border: `1px solid ${chartTheme.tooltip.border}`, background: chartTheme.tooltip.background, boxShadow: "0 4px 12px rgba(0,0,0,.15)" }} labelStyle={{ fontWeight: 600, color: chartTheme.tooltip.label }} />
-                    <ReferenceLine y={0} stroke={chartTheme.grid} strokeDasharray="4 2" />
-                    <Line type="monotone" dataKey="Resultado" stroke={theme === "dark" ? "#60a5fa" : "#0f4c81"} strokeWidth={2.5} dot={{ fill: theme === "dark" ? "#60a5fa" : "#0f4c81", r: 4, strokeWidth: 0 }} activeDot={{ r: 6 }} />
-                  </LineChart>
-                </ResponsiveContainer>
-              </div>
-            )}
+                      <div className="grid grid-cols-1 gap-3 sm:gap-4 lg:grid-cols-5">
+                        <div className="rounded-xl border border-zinc-100 bg-white p-3 dark:border-zinc-700/50 dark:bg-zinc-900/50 sm:p-4 lg:col-span-3">
+                          {!isMultiCompany ? (
+                            <>
+                              <p className="mb-3 text-xs font-semibold text-zinc-500 dark:text-zinc-400">Receitas × Despesas por período</p>
+                              {chartSeries.length > 0 ? (
+                                <ResponsiveContainer width="100%" height={220}>
+                                  <BarChart data={chartSeries} barCategoryGap="28%" barGap={2} margin={{ left: -4, right: 4 }}>
+                                    <CartesianGrid strokeDasharray="3 3" stroke={chartTheme.grid} vertical={false} />
+                                    <XAxis dataKey="period" tick={{ fontSize: 10, fill: chartTheme.tick }} axisLine={false} tickLine={false} interval="preserveStartEnd" />
+                                    <YAxis tickFormatter={formatCurrencyShort} width={52} tick={{ fontSize: 10, fill: chartTheme.tick }} axisLine={false} tickLine={false} />
+                                    <Tooltip formatter={currencyTooltipFormatter} contentStyle={{ fontSize: 12, borderRadius: 10, border: `1px solid ${chartTheme.tooltip.border}`, background: chartTheme.tooltip.background, boxShadow: "0 4px 12px rgba(0,0,0,.15)" }} labelStyle={{ fontWeight: 600, color: chartTheme.tooltip.label }} />
+                                    <Legend wrapperStyle={{ fontSize: 11, paddingTop: 8 }} iconSize={10} />
+                                    <Bar dataKey="Receitas" fill="#10b981" radius={[4, 4, 0, 0]} />
+                                    <Bar dataKey="Despesas" fill="#ef4444" radius={[4, 4, 0, 0]} />
+                                    <ReferenceLine y={0} stroke={chartTheme.grid} />
+                                  </BarChart>
+                                </ResponsiveContainer>
+                              ) : (
+                                <p className="py-8 text-center text-sm text-zinc-400 dark:text-zinc-500">Sem dados no ano selecionado.</p>
+                              )}
+                            </>
+                          ) : (
+                            <>
+                              <div className="mb-3 grid grid-cols-2 gap-x-4 gap-y-1.5 md:flex md:flex-wrap md:gap-x-4 md:gap-y-1.5">
+                                {companiesData.map((company, i) => (
+                                  <span key={company.companyId} className="flex min-w-0 items-center gap-1.5">
+                                    <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: COMPANY_COLORS[i % COMPANY_COLORS.length] }} />
+                                    <span className="max-w-30 truncate text-[10px] text-zinc-500 dark:text-zinc-400 sm:max-w-40">{company.companyName}</span>
+                                  </span>
+                                ))}
+                              </div>
+                              <p className="mb-2 text-xs font-semibold text-zinc-500 dark:text-zinc-400">Receitas por empresa</p>
+                              {comparativeSeries.length > 0 ? (
+                                <ResponsiveContainer width="100%" height={160}>
+                                  <BarChart data={comparativeSeries} barCategoryGap="22%" barGap={2} margin={{ left: -4, right: 4 }}>
+                                    <CartesianGrid strokeDasharray="3 3" stroke={chartTheme.grid} vertical={false} />
+                                    <XAxis dataKey="period" tick={{ fontSize: 10, fill: chartTheme.tick }} axisLine={false} tickLine={false} interval="preserveStartEnd" />
+                                    <YAxis tickFormatter={formatCurrencyShort} width={52} tick={{ fontSize: 10, fill: chartTheme.tick }} axisLine={false} tickLine={false} />
+                                    <Tooltip formatter={currencyTooltipFormatter} contentStyle={{ fontSize: 12, borderRadius: 10, border: `1px solid ${chartTheme.tooltip.border}`, background: chartTheme.tooltip.background, boxShadow: "0 4px 12px rgba(0,0,0,.15)" }} labelStyle={{ fontWeight: 600, color: chartTheme.tooltip.label }} />
+                                    {companiesData.map((company, i) => (
+                                      <Bar key={company.companyId} dataKey={company.companyName} fill={COMPANY_COLORS[i % COMPANY_COLORS.length]} radius={[4, 4, 0, 0]} />
+                                    ))}
+                                  </BarChart>
+                                </ResponsiveContainer>
+                              ) : (
+                                <p className="py-4 text-center text-sm text-zinc-400 dark:text-zinc-500">Sem dados no período.</p>
+                              )}
+                              <p className="mb-2 mt-4 text-xs font-semibold text-zinc-500 dark:text-zinc-400">Despesas por empresa</p>
+                              {comparativeDespesasSeries.length > 0 ? (
+                                <ResponsiveContainer width="100%" height={160}>
+                                  <BarChart data={comparativeDespesasSeries} barCategoryGap="22%" barGap={2} margin={{ left: -4, right: 4 }}>
+                                    <CartesianGrid strokeDasharray="3 3" stroke={chartTheme.grid} vertical={false} />
+                                    <XAxis dataKey="period" tick={{ fontSize: 10, fill: chartTheme.tick }} axisLine={false} tickLine={false} interval="preserveStartEnd" />
+                                    <YAxis tickFormatter={formatCurrencyShort} width={52} tick={{ fontSize: 10, fill: chartTheme.tick }} axisLine={false} tickLine={false} />
+                                    <Tooltip formatter={currencyTooltipFormatter} contentStyle={{ fontSize: 12, borderRadius: 10, border: `1px solid ${chartTheme.tooltip.border}`, background: chartTheme.tooltip.background, boxShadow: "0 4px 12px rgba(0,0,0,.15)" }} labelStyle={{ fontWeight: 600, color: chartTheme.tooltip.label }} />
+                                    {companiesData.map((company, i) => (
+                                      <Bar key={company.companyId} dataKey={company.companyName} fill={COMPANY_COLORS[i % COMPANY_COLORS.length]} radius={[4, 4, 0, 0]} />
+                                    ))}
+                                  </BarChart>
+                                </ResponsiveContainer>
+                              ) : (
+                                <p className="py-4 text-center text-sm text-zinc-400 dark:text-zinc-500">Sem dados no período.</p>
+                              )}
+                            </>
+                          )}
+                        </div>
 
-            {/* ── Heatmap: Resultado por empresa × período ── */}
-            {heatmapData && (
-              <div className="mt-4 rounded-xl border border-zinc-100 bg-white p-4 dark:border-zinc-700/50 dark:bg-zinc-900/50">
-                <div className="mb-3 flex items-center gap-2">
-                  <span className="flex h-6 w-6 items-center justify-center rounded-lg bg-blue-100 text-blue-600 dark:bg-blue-900/50 dark:text-blue-400">
-                    {Icons.chart}
-                  </span>
-                  <p className="text-xs font-semibold text-zinc-500 dark:text-zinc-400">
-                    {isMultiCompany
-                      ? "Mapa de calor — Resultado por empresa × período"
-                      : "Mapa de calor — Resultado por período"}
-                  </p>
-                </div>
-                <HeatmapChart
-                  data={heatmapData}
-                  subtitle={
-                    isMultiCompany
-                      ? "Cada célula mostra o Resultado (Receitas − Despesas) da empresa naquele período"
-                      : "Resultado (Receitas − Despesas) da empresa em cada período"
-                  }
-                />
-              </div>
-            )}
-          </div>
+                        <div className="flex flex-col rounded-xl border border-zinc-100 bg-white p-3 dark:border-zinc-700/50 dark:bg-zinc-900/50 sm:p-4 lg:col-span-2">
+                          <div className="mb-3 flex items-center justify-between">
+                            <p className="text-xs font-semibold text-zinc-500 dark:text-zinc-400">
+                              {mainExpenseData.length >= 2
+                                ? "Composição de despesas"
+                                : mainExpenseData.length === 1
+                                  ? expenseDetailEntries.length > 0
+                                    ? `${mainExpenseData[0]!.name} — lançamentos`
+                                    : `${mainExpenseData[0]!.name} — detalhamento`
+                                  : "Despesas"}
+                            </p>
+                            <span className="text-sm font-bold text-red-600 dark:text-red-400">{formatCurrencyShort(get(d, "DESPESAS_TOTAL"))}</span>
+                          </div>
+                          {activePieData.length > 0 ? (
+                            <div className="flex flex-1 gap-3">
+                              {/* Gráfico de pizza (donut) */}
+                              <div className="h-52 w-1/2 shrink-0">
+                                <ResponsiveContainer width="100%" height="100%">
+                                  <PieChart>
+                                    <Pie
+                                      data={activePieData}
+                                      cx="50%" cy="50%"
+                                      innerRadius="38%" outerRadius="62%"
+                                      paddingAngle={2}
+                                      dataKey="value"
+                                      label={({ cx: pcx, cy: pcy, midAngle, outerRadius: or, percent }) => {
+                                        if ((percent as number) < 0.05) return null;
+                                        const RAD = Math.PI / 180;
+                                        const r = (or as number) * 1.28;
+                                        const x = (pcx as number) + r * Math.cos(-(midAngle as number) * RAD);
+                                        const y = (pcy as number) + r * Math.sin(-(midAngle as number) * RAD);
+                                        return (
+                                          <text x={x} y={y} fill={chartTheme.tick} fontSize={8} textAnchor={x > (pcx as number) ? "start" : "end"} dominantBaseline="central">
+                                            {`${((percent as number) * 100).toFixed(0)}%`}
+                                          </text>
+                                        );
+                                      }}
+                                      labelLine={false}
+                                    >
+                                      {activePieData.map((entry, i) => (
+                                        <Cell key={i} fill={entry.fill} />
+                                      ))}
+                                    </Pie>
+                                    <Tooltip
+                                      formatter={currencyTooltipFormatter}
+                                      contentStyle={{ fontSize: 12, borderRadius: 10, border: `1px solid ${chartTheme.tooltip.border}`, background: chartTheme.tooltip.background }}
+                                      labelStyle={{ color: chartTheme.tooltip.label }}
+                                    />
+                                  </PieChart>
+                                </ResponsiveContainer>
+                              </div>
+                              {/* Legenda */}
+                              <div className="flex flex-1 flex-col justify-center space-y-1 overflow-hidden">
+                                {activePieData.map((item) => {
+                                  const pct = activePieTotal > 0 ? (item.value / activePieTotal) * 100 : 0;
+                                  return (
+                                    <div key={item.name} className="flex items-center justify-between text-[10px]">
+                                      <div className="flex min-w-0 items-center gap-1">
+                                        <span className="h-1.5 w-1.5 shrink-0 rounded-full" style={{ background: item.fill }} />
+                                        <span className="truncate text-zinc-600 dark:text-zinc-400">{item.name}</span>
+                                      </div>
+                                      <div className="ml-1 flex shrink-0 items-center gap-1.5 tabular-nums">
+                                        <span className="text-zinc-400 dark:text-zinc-500">{pct.toFixed(1)}%</span>
+                                        <span className="font-medium text-zinc-700 dark:text-zinc-200">{formatCurrencyShort(item.value)}</span>
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          ) : (
+                            <p className="py-8 text-center text-sm text-zinc-400 dark:text-zinc-500">Sem despesas no período.</p>
+                          )}
+                        </div>
+                      </div>
 
-          {/* ══ RECEITAS + DESPESAS ══ */}
-          <div className="mt-5 grid gap-4 lg:grid-cols-2">
+                      {trendSeries.length > 1 && (
+                        <div className="mt-4 rounded-xl border border-zinc-100 bg-white p-4 dark:border-zinc-700/50 dark:bg-zinc-900/50">
+                          <p className="mb-3 text-xs font-semibold text-zinc-500 dark:text-zinc-400">Tendência do resultado</p>
+                          <ResponsiveContainer width="100%" height={170}>
+                            <LineChart data={trendSeries} margin={{ left: -4, right: 4 }}>
+                              <CartesianGrid strokeDasharray="3 3" stroke={chartTheme.grid} vertical={false} />
+                              <XAxis dataKey="period" tick={{ fontSize: 10, fill: chartTheme.tick }} axisLine={false} tickLine={false} interval="preserveStartEnd" />
+                              <YAxis tickFormatter={formatCurrencyShort} width={52} tick={{ fontSize: 10, fill: chartTheme.tick }} axisLine={false} tickLine={false} />
+                              <Tooltip formatter={currencyTooltipFormatter} contentStyle={{ fontSize: 12, borderRadius: 10, border: `1px solid ${chartTheme.tooltip.border}`, background: chartTheme.tooltip.background, boxShadow: "0 4px 12px rgba(0,0,0,.15)" }} labelStyle={{ fontWeight: 600, color: chartTheme.tooltip.label }} />
+                              <ReferenceLine y={0} stroke={chartTheme.grid} strokeDasharray="4 2" />
+                              <Line type="monotone" dataKey="Resultado" stroke={theme === "dark" ? "#60a5fa" : "#0f4c81"} strokeWidth={2.5} dot={{ fill: theme === "dark" ? "#60a5fa" : "#0f4c81", r: 4, strokeWidth: 0 }} activeDot={{ r: 6 }} />
+                            </LineChart>
+                          </ResponsiveContainer>
+                        </div>
+                      )}
 
-            {/* RECEITAS GROUP */}
-            <div className="rounded-2xl border border-emerald-200 bg-emerald-500/10 p-5 dark:border-emerald-900/30 dark:bg-emerald-950/10 sm:p-6">
-              <div className="mb-4 flex items-center gap-2">
-                <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-emerald-100 text-emerald-600 dark:bg-emerald-900/50 dark:text-emerald-400">
-                  {Icons.trending}
-                </span>
-                <h2 className="text-sm font-bold text-emerald-800 dark:text-emerald-300">Receitas</h2>
-                <div className="ml-2 h-px flex-1 bg-emerald-200/70 dark:bg-emerald-900/40" />
-                <span className="text-xs font-semibold text-emerald-700 dark:text-emerald-400">
-                  {formatCurrency(get(d, "RECEITAS_TOTAL"))}
-                </span>
-              </div>
-
-              <div className="grid gap-4 sm:grid-cols-2">
-                <KpiCard label="Faturamento" value={get(d, "FATURAMENTO")} color="green"
-                  sub="NFs emitidas" icon={Icons.invoice}
-                  onDrillDown={canDrillDown && mappingCodes["FATURAMENTO"]?.[0] ? () => setDrillDown({ accountCode: mappingCodes["FATURAMENTO"][0]!, label: "Faturamento" }) : undefined} />
-                <KpiCard label="NFs Recebidas" value={get(d, "NFS_RECEBIDAS")} color="teal"
-                  sub="Pagamentos recebidos" icon={Icons.invoice}
-                  onDrillDown={canDrillDown && mappingCodes["NFS_RECEBIDAS"]?.[0] ? () => setDrillDown({ accountCode: mappingCodes["NFS_RECEBIDAS"][0]!, label: "NFs Recebidas" }) : undefined} />
-                <KpiCard label="Rendimento Bruto" value={get(d, "RENDIMENTO_BRUTO")} color="blue"
-                  sub="Aplicações financeiras" icon={Icons.chart}
-                  onDrillDown={canDrillDown && mappingCodes["RENDIMENTO_BRUTO"]?.[0] ? () => setDrillDown({ accountCode: mappingCodes["RENDIMENTO_BRUTO"][0]!, label: "Rendimento Bruto" }) : undefined} />
-                <KpiCard label="Aluguel" value={get(d, "ALUGUEL")} color="teal"
-                  icon={Icons.building} />
-              </div>
-
-              {(get(d, "LRA2_INVEST") + get(d, "LRA3_INVEST") + get(d, "B_VISTA_INVEST") + get(d, "TRAPICHE_INVEST")) > 0 ? (
-                <div className="mt-3 grid gap-3 sm:grid-cols-2">
-                  <KpiCard label="LRA2 (Invest.)" value={get(d, "LRA2_INVEST")} color="blue" />
-                  <KpiCard label="LRA3 (Invest.)" value={get(d, "LRA3_INVEST")} color="blue" />
-                  <KpiCard label="B. Vista (Invest.)" value={get(d, "B_VISTA_INVEST")} color="blue" />
-                  <KpiCard label="Trapiche (Invest.)" value={get(d, "TRAPICHE_INVEST")} color="blue" />
-                </div>
-              ) : null}
-
-              {/* NFs comparison */}
-              <div className="mt-4 grid gap-3 sm:grid-cols-3">
-                {[
-                  { label: "NFs Emitidas", value: get(d, "FATURAMENTO"), color: "text-emerald-700 dark:text-emerald-400" },
-                  { label: "NFs Recebidas", value: get(d, "NFS_RECEBIDAS"), color: "text-teal-700 dark:text-teal-400" },
-                  {
-                    label: "Diferença",
-                    value: get(d, "FATURAMENTO") - get(d, "NFS_RECEBIDAS"),
-                    color: get(d, "FATURAMENTO") - get(d, "NFS_RECEBIDAS") >= 0 ? "text-amber-600 dark:text-amber-400" : "text-red-600 dark:text-red-400",
-                  },
-                ].map(({ label, value, color }) => (
-                  <div key={label} className="min-w-0 flex items-center rounded-xl border border-emerald-100 bg-white/80 px-4 py-3 dark:border-emerald-900/30 dark:bg-zinc-800/50">
-                    <div className="min-w-0">
-                      <p className="text-xs text-zinc-400 dark:text-zinc-500">{label}</p>
-                      <p className={`mt-0.5 truncate text-xs font-bold sm:text-sm ${color}`}>{formatCurrency(value)}</p>
+                      {heatmapData && (
+                        <div className="mt-4 rounded-xl border border-zinc-100 bg-white p-4 dark:border-zinc-700/50 dark:bg-zinc-900/50">
+                          <div className="mb-3 flex items-center gap-2">
+                            <span className="flex h-6 w-6 items-center justify-center rounded-lg bg-blue-100 text-blue-600 dark:bg-blue-900/50 dark:text-blue-400">
+                              {Icons.chart}
+                            </span>
+                            <p className="text-xs font-semibold text-zinc-500 dark:text-zinc-400">
+                              {isMultiCompany ? "Mapa de calor — Resultado por empresa × período" : "Mapa de calor — Resultado por período"}
+                            </p>
+                          </div>
+                          <HeatmapChart
+                            data={heatmapData}
+                            subtitle={isMultiCompany ? "Cada célula mostra o Resultado (Receitas − Despesas) da empresa naquele período" : "Resultado (Receitas − Despesas) da empresa em cada período"}
+                          />
+                        </div>
+                      )}
                     </div>
-                  </div>
-                ))}
-              </div>
-            </div>
 
-            {/* DESPESAS GROUP */}
-            <div className="rounded-2xl border border-red-200 bg-red-500/10 p-5 dark:border-red-900/30 dark:bg-red-950/10 sm:p-6">
-              <div className="mb-4 flex items-center gap-2">
-                <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-red-100 text-red-600 dark:bg-red-900/50 dark:text-red-400">
-                  {Icons.tax}
-                </span>
-                <h2 className="text-sm font-bold text-red-800 dark:text-red-300">Despesas</h2>
-                <div className="ml-2 h-px flex-1 bg-red-200/70 dark:bg-red-900/40" />
-                <span className="text-xs font-semibold text-red-700 dark:text-red-400">
-                  {formatCurrency(get(d, "DESPESAS_TOTAL"))}
-                </span>
-              </div>
 
-              <div className="grid gap-4 sm:grid-cols-2">
-                <KpiCard label="Impostos" value={get(d, "IMPOSTOS")} color="red" icon={Icons.tax}
-                  onDrillDown={canDrillDown && mappingCodes["IMPOSTOS"]?.[0] ? () => setDrillDown({ accountCode: mappingCodes["IMPOSTOS"][0]!, label: "Impostos" }) : undefined} />
-                <KpiCard label="IOF / IRRF" value={get(d, "IOF_IRRF")} color="red" icon={Icons.dollar}
-                  onDrillDown={canDrillDown && mappingCodes["IOF_IRRF"]?.[0] ? () => setDrillDown({ accountCode: mappingCodes["IOF_IRRF"][0]!, label: "IOF / IRRF" }) : undefined} />
-                <KpiCard label="Demais Despesas" value={get(d, "DEMAIS_DESPESAS")} color="amber" icon={Icons.chart}
-                  onDrillDown={canDrillDown && mappingCodes["DEMAIS_DESPESAS"]?.[0] ? () => setDrillDown({ accountCode: mappingCodes["DEMAIS_DESPESAS"][0]!, label: "Demais Despesas" }) : undefined} />
-                <KpiCard label="Condomínio" value={get(d, "CONDOMINIO")} color="amber" icon={Icons.building} />
-              </div>
+          {/* ── Receitas & Despesas Detalhado ─────────────────────────── */}
+                    <>
+                      <div className="mt-5 grid gap-4 lg:grid-cols-2">
+                        {/* RECEITAS GROUP */}
+                        <div className="rounded-2xl border border-emerald-200 bg-emerald-500/10 p-5 dark:border-emerald-900/30 dark:bg-emerald-950/10 sm:p-6">
+                          <div className="mb-4 flex items-center gap-2">
+                            <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-emerald-100 text-emerald-600 dark:bg-emerald-900/50 dark:text-emerald-400">
+                              {Icons.trending}
+                            </span>
+                            <h2 className="text-sm font-bold text-emerald-800 dark:text-emerald-300">Receitas</h2>
+                            <div className="ml-2 h-px flex-1 bg-emerald-200/70 dark:bg-emerald-900/40" />
+                            <span className="text-xs font-semibold text-emerald-700 dark:text-emerald-400">
+                              {formatCurrency(get(d, "RECEITAS_TOTAL"))}
+                            </span>
+                          </div>
+                          <div className="grid gap-4 sm:grid-cols-2">
+                            <KpiCard label="Faturamento" value={get(d, "FATURAMENTO")} color="green" sub="NFs emitidas" icon={Icons.invoice}
+                              onDrillDown={canDrillDown && mappingCodes["FATURAMENTO"]?.[0] ? () => setDrillDown({ accountCode: mappingCodes["FATURAMENTO"][0]!, label: "Faturamento" }) : undefined} />
+                            <KpiCard label="NFs Recebidas" value={get(d, "NFS_RECEBIDAS")} color="teal" sub="Pagamentos recebidos" icon={Icons.invoice}
+                              onDrillDown={canDrillDown && mappingCodes["NFS_RECEBIDAS"]?.[0] ? () => setDrillDown({ accountCode: mappingCodes["NFS_RECEBIDAS"][0]!, label: "NFs Recebidas" }) : undefined} />
+                            <KpiCard label="Rendimento Bruto" value={get(d, "RENDIMENTO_BRUTO")} color="blue" sub="Aplicações financeiras" icon={Icons.chart}
+                              onDrillDown={canDrillDown && mappingCodes["RENDIMENTO_BRUTO"]?.[0] ? () => setDrillDown({ accountCode: mappingCodes["RENDIMENTO_BRUTO"][0]!, label: "Rendimento Bruto" }) : undefined} />
+                            <KpiCard label="Aluguel" value={get(d, "ALUGUEL")} color="teal" icon={Icons.building} />
+                          </div>
+                          {(get(d, "LRA2_INVEST") + get(d, "LRA3_INVEST") + get(d, "B_VISTA_INVEST") + get(d, "TRAPICHE_INVEST")) > 0 ? (
+                            <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                              <KpiCard label="LRA2 (Invest.)" value={get(d, "LRA2_INVEST")} color="blue" />
+                              <KpiCard label="LRA3 (Invest.)" value={get(d, "LRA3_INVEST")} color="blue" />
+                              <KpiCard label="B. Vista (Invest.)" value={get(d, "B_VISTA_INVEST")} color="blue" />
+                              <KpiCard label="Trapiche (Invest.)" value={get(d, "TRAPICHE_INVEST")} color="blue" />
+                            </div>
+                          ) : null}
+                          <div className="mt-4 grid gap-3 sm:grid-cols-3">
+                            {[
+                              { label: "NFs Emitidas", value: get(d, "FATURAMENTO"), color: "text-emerald-700 dark:text-emerald-400" },
+                              { label: "NFs Recebidas", value: get(d, "NFS_RECEBIDAS"), color: "text-teal-700 dark:text-teal-400" },
+                              { label: "Diferença", value: get(d, "FATURAMENTO") - get(d, "NFS_RECEBIDAS"), color: get(d, "FATURAMENTO") - get(d, "NFS_RECEBIDAS") >= 0 ? "text-amber-600 dark:text-amber-400" : "text-red-600 dark:text-red-400" },
+                            ].map(({ label, value, color }) => (
+                              <div key={label} className="min-w-0 flex items-center rounded-xl border border-emerald-100 bg-white/80 px-4 py-3 dark:border-emerald-900/30 dark:bg-zinc-800/50">
+                                <div className="min-w-0">
+                                  <p className="text-xs text-zinc-400 dark:text-zinc-500">{label}</p>
+                                  <p className={`mt-0.5 truncate text-xs font-bold sm:text-sm ${color}`}>{formatCurrency(value)}</p>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
 
-              {(get(d, "LRA2_DESP") + get(d, "LRA3_DESP") + get(d, "B_VISTA_DESP") + get(d, "TRAPICHE_DESP")) > 0 ? (
-                <div className="mt-3 grid gap-3 sm:grid-cols-2">
-                  <KpiCard label="LRA2 (Desp.)" value={get(d, "LRA2_DESP")} color="red" />
-                  <KpiCard label="LRA3 (Desp.)" value={get(d, "LRA3_DESP")} color="red" />
-                  <KpiCard label="B. Vista (Desp.)" value={get(d, "B_VISTA_DESP")} color="red" />
-                  <KpiCard label="Trapiche (Desp.)" value={get(d, "TRAPICHE_DESP")} color="red" />
-                </div>
-              ) : null}
-            </div>
+                        {/* DESPESAS GROUP */}
+                        <div className="rounded-2xl border border-red-200 bg-red-500/10 p-5 dark:border-red-900/30 dark:bg-red-950/10 sm:p-6">
+                          <div className="mb-4 flex items-center gap-2">
+                            <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-red-100 text-red-600 dark:bg-red-900/50 dark:text-red-400">
+                              {Icons.tax}
+                            </span>
+                            <h2 className="text-sm font-bold text-red-800 dark:text-red-300">Despesas</h2>
+                            <div className="ml-2 h-px flex-1 bg-red-200/70 dark:bg-red-900/40" />
+                            <span className="text-xs font-semibold text-red-700 dark:text-red-400">
+                              {formatCurrency(get(d, "DESPESAS_TOTAL"))}
+                            </span>
+                          </div>
+                          <div className="grid gap-4 sm:grid-cols-2">
+                            <KpiCard label="Impostos" value={get(d, "IMPOSTOS")} color="red" icon={Icons.tax}
+                              onDrillDown={canDrillDown && mappingCodes["IMPOSTOS"]?.[0] ? () => setDrillDown({ accountCode: mappingCodes["IMPOSTOS"][0]!, label: "Impostos" }) : undefined} />
+                            <KpiCard label="IOF / IRRF" value={get(d, "IOF_IRRF")} color="red" icon={Icons.dollar}
+                              onDrillDown={canDrillDown && mappingCodes["IOF_IRRF"]?.[0] ? () => setDrillDown({ accountCode: mappingCodes["IOF_IRRF"][0]!, label: "IOF / IRRF" }) : undefined} />
+                            <KpiCard label="Demais Despesas" value={get(d, "DEMAIS_DESPESAS")} color="amber" icon={Icons.chart}
+                              onDrillDown={canDrillDown && mappingCodes["DEMAIS_DESPESAS"]?.[0] ? () => setDrillDown({ accountCode: mappingCodes["DEMAIS_DESPESAS"][0]!, label: "Demais Despesas" }) : undefined} />
+                            <KpiCard label="Condomínio" value={get(d, "CONDOMINIO")} color="amber" icon={Icons.building} />
+                          </div>
+                          {(get(d, "LRA2_DESP") + get(d, "LRA3_DESP") + get(d, "B_VISTA_DESP") + get(d, "TRAPICHE_DESP")) > 0 ? (
+                            <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                              <KpiCard label="LRA2 (Desp.)" value={get(d, "LRA2_DESP")} color="red" />
+                              <KpiCard label="LRA3 (Desp.)" value={get(d, "LRA3_DESP")} color="red" />
+                              <KpiCard label="B. Vista (Desp.)" value={get(d, "B_VISTA_DESP")} color="red" />
+                              <KpiCard label="Trapiche (Desp.)" value={get(d, "TRAPICHE_DESP")} color="red" />
+                            </div>
+                          ) : null}
+                        </div>
+                      </div>
 
-          </div>
-
-          {/* ══ BOTTOM ROW ══ */}
-          <div className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-            {/* Saldo Bancário */}
-            <div className="rounded-2xl border border-purple-200 bg-purple-500/10 p-5 dark:border-purple-900/30 dark:bg-purple-950/10">
-              <div className="mb-3 flex items-center gap-2">
-                <span className="flex h-6 w-6 items-center justify-center rounded-lg bg-purple-100 text-purple-600 dark:bg-purple-900/50 dark:text-purple-400">
-                  {Icons.bank}
-                </span>
-                <h3 className="text-xs font-bold uppercase tracking-widest text-zinc-400 dark:text-zinc-500">Saldos Bancários</h3>
-              </div>
-              <KpiCard label="Saldo Disponível" value={get(d, "SD_BANCARIO")} color="purple"
-                sub="Soma de todas as contas 1.1.1" icon={Icons.bank}
-                onDrillDown={canDrillDown && mappingCodes["SD_BANCARIO"]?.[0] ? () => setDrillDown({ accountCode: mappingCodes["SD_BANCARIO"][0]!, label: "Saldo Bancário" }) : undefined} />
-            </div>
-
-            {/* Rendimento Passivo */}
-            <div className="rounded-2xl border border-teal-200 bg-teal-500/10 p-5 dark:border-teal-900/30 dark:bg-teal-950/10">
-              <div className="mb-3 flex items-center gap-2">
-                <span className="flex h-6 w-6 items-center justify-center rounded-lg bg-teal-100 text-teal-600 dark:bg-teal-900/50 dark:text-teal-400">
-                  {Icons.trending}
-                </span>
-                <h3 className="text-xs font-bold uppercase tracking-widest text-zinc-400 dark:text-zinc-500">Rendimento Passivo</h3>
-              </div>
-              <div className="grid gap-3">
-                <KpiCard label="Rentabilidade" value={get(d, "RENTABILIDADE")} color="teal"
-                  sub="Rend. bruto − IOF/IRRF" icon={Icons.trending} />
-                <KpiCard label="Aluguel Líquido" value={get(d, "ALUGUEL_LIQUIDO")} color="teal"
-                  sub="Aluguel − Condomínio" icon={Icons.building} />
-              </div>
-            </div>
-
-            {/* Distribuição de Lucros */}
-            <div className="rounded-2xl border border-amber-200 bg-amber-500/10 p-5 dark:border-amber-900/30 dark:bg-amber-950/10">
-              <div className="mb-3 flex items-center gap-2">
-                <span className="flex h-6 w-6 items-center justify-center rounded-lg bg-amber-100 text-amber-600 dark:bg-amber-900/50 dark:text-amber-400">
-                  {Icons.dollar}
-                </span>
-                <h3 className="text-xs font-bold uppercase tracking-widest text-zinc-400 dark:text-zinc-500">Distribuição de Lucros</h3>
-              </div>
-              <KpiCard label="Distribuição de Lucros" value={get(d, "DISTRIB_LUCROS")} color="purple"
-                icon={Icons.dollar}
-                onDrillDown={canDrillDown && mappingCodes["DISTRIB_LUCROS"]?.[0] ? () => setDrillDown({ accountCode: mappingCodes["DISTRIB_LUCROS"][0]!, label: "Distribuição de Lucros" }) : undefined} />
-            </div>
-          </div>
+                      {/* Rendimento Passivo (Aluguel Líquido) */}
+                      <div className="mt-4 rounded-2xl border border-teal-200 bg-teal-500/10 p-5 dark:border-teal-900/30 dark:bg-teal-950/10">
+                        <div className="mb-3 flex items-center gap-2">
+                          <span className="flex h-6 w-6 items-center justify-center rounded-lg bg-teal-100 text-teal-600 dark:bg-teal-900/50 dark:text-teal-400">
+                            {Icons.trending}
+                          </span>
+                          <h3 className="text-xs font-bold uppercase tracking-widest text-zinc-400 dark:text-zinc-500">Rendimento Passivo</h3>
+                        </div>
+                        <div className="grid gap-3 sm:grid-cols-2">
+                          <KpiCard label="Rentabilidade" value={get(d, "RENTABILIDADE")} color="teal" sub="Rend. bruto − IOF/IRRF" icon={Icons.trending} />
+                          <KpiCard label="Aluguel Líquido" value={get(d, "ALUGUEL_LIQUIDO")} color="teal" sub="Aluguel − Condomínio" icon={Icons.building} />
+                        </div>
+                      </div>
+                    </>
         </>
       )}
 

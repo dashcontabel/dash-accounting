@@ -15,6 +15,7 @@ vi.mock("@/lib/company-access", () => ({
 vi.mock("@/lib/xlsx", () => ({
   parseXlsxBuffer: vi.fn(),
   applyAccountMappings: vi.fn(),
+  mergeSummaries: vi.fn().mockReturnValue({}),
   isRazaoFormat: vi.fn().mockReturnValue(false),
   detectFileFormat: vi.fn().mockReturnValue("BALANCETE"),
   parseRazaoBuffer: vi.fn(),
@@ -28,7 +29,7 @@ vi.mock("@/lib/audit", () => ({
 vi.mock("@/lib/prisma", () => ({
   prisma: {
     user: { findFirst: vi.fn() },
-    importBatch: { findFirst: vi.fn(), findUnique: vi.fn(), create: vi.fn(), update: vi.fn() },
+    importBatch: { findFirst: vi.fn(), findUnique: vi.fn(), create: vi.fn(), update: vi.fn().mockResolvedValue({}) },
     accountMapping: { findMany: vi.fn() },
     dashboardMonthlySummary: { findUnique: vi.fn() },
     $transaction: vi.fn(),
@@ -63,9 +64,9 @@ describe("POST /api/imports/xlsx", () => {
     vi.mocked(prisma.$transaction).mockImplementation(async (callback: never) =>
       callback({
         ledgerEntry: { deleteMany: vi.fn(), createMany: vi.fn() },
-        dashboardMonthlySummary: { upsert: vi.fn() },
+        dashboardMonthlySummary: { findUnique: vi.fn().mockResolvedValue(null), upsert: vi.fn() },
         unmappedAccount: { deleteMany: vi.fn(), createMany: vi.fn() },
-        importBatch: { update: vi.fn() },
+        importBatch: { update: vi.fn().mockResolvedValue({}) },
       }),
     );
 

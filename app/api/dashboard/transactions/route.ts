@@ -13,6 +13,7 @@ const querySchema = z.object({
   companyId: z.string().min(1),
   referenceMonth: z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/),
   accountCode: z.string().optional(),
+  costCenter: z.string().optional(),
   page: z.coerce.number().int().min(1).default(1),
 });
 
@@ -29,12 +30,13 @@ async function getActiveUserFromSession(request: NextRequest) {
  * GET /api/dashboard/transactions
  *
  * Returns individual Razão entries for a company + month, optionally filtered
- * by account code (for card drill-down modals).
+ * by account code (for card drill-down modals) and/or cost center.
  *
  * Query params:
  *   companyId        – required
  *   referenceMonth   – required, "YYYY-MM"
  *   accountCode      – optional, filters to a single account (or its children via PREFIX logic)
+ *   costCenter       – optional, exact match; use "__null__" to filter entries with no CC
  *   page             – optional, 1-based, default 1
  */
 export async function GET(request: NextRequest) {
@@ -47,6 +49,7 @@ export async function GET(request: NextRequest) {
     companyId: request.nextUrl.searchParams.get("companyId") ?? "",
     referenceMonth: request.nextUrl.searchParams.get("referenceMonth") ?? "",
     accountCode: request.nextUrl.searchParams.get("accountCode") ?? undefined,
+    costCenter: request.nextUrl.searchParams.get("costCenter") ?? undefined,
     page: request.nextUrl.searchParams.get("page") ?? 1,
   });
 
@@ -54,7 +57,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "Parametros invalidos." }, { status: 400 });
   }
 
-  const { companyId, referenceMonth, accountCode, page } = parsed.data;
+  const { companyId, referenceMonth, accountCode, costCenter, page } = parsed.data;
 
   try {
     await assertCompanyAccess(user, companyId);
@@ -68,9 +71,14 @@ export async function GET(request: NextRequest) {
     ? { accountCode: { startsWith: accountCode } }
     : {};
 
+  // "__null__" is the sentinel value used by the CC UI for entries with no cost center
+  const costCenterFilter = costCenter
+    ? { costCenter: costCenter === "__null__" ? null : costCenter }
+    : {};
+
   const [entries, total] = await Promise.all([
     prisma.razaoEntry.findMany({
-      where: { companyId, referenceMonth, ...accountFilter },
+      where: { companyId, referenceMonth, ...accountFilter, ...costCenterFilter },
       orderBy: [{ entryDate: "asc" }, { accountCode: "asc" }],
       skip: (page - 1) * PAGE_SIZE,
       take: PAGE_SIZE,
@@ -90,7 +98,7 @@ export async function GET(request: NextRequest) {
       },
     }),
     prisma.razaoEntry.count({
-      where: { companyId, referenceMonth, ...accountFilter },
+      where: { companyId, referenceMonth, ...accountFilter, ...costCenterFilter },
     }),
   ]);
 

@@ -7,7 +7,7 @@ import { getUserFromRequest } from "@/lib/auth";
 import { assertCompanyAccess } from "@/lib/company-access";
 import { prisma } from "@/lib/prisma";
 import { AuditAction, writeAuditLog } from "@/lib/audit";
-import { applyAccountMappings, detectFileFormat, isRazaoFormat, parseRazaoBuffer, parseXlsxBuffer } from "@/lib/xlsx";
+import { applyAccountMappings, mergeSummaries, detectFileFormat, isRazaoFormat, parseRazaoBuffer, parseXlsxBuffer } from "@/lib/xlsx";
 
 export const runtime = "nodejs";
 
@@ -107,11 +107,13 @@ export async function POST(request: NextRequest) {
 
     // Run both validation queries in parallel — both depend only on data already available.
     const [existingDoneBatch, cnpjCompany] = await Promise.all([
-      // Block import when a successful batch already exists for this company+month
+      // Block only when a Balancete (XLSX) already exists for this company+month.
+      // A Razão import may coexist with a Balancete in the same month.
       prisma.importBatch.findFirst({
         where: {
           companyId: parsedForm.data.companyId,
           referenceMonth: effectiveMonth,
+          sourceType: "XLSX",
           status: "DONE",
           NOT: { checksum },
         },
@@ -220,12 +222,21 @@ export async function POST(request: NextRequest) {
 
         if (currentMappings.length > 0) {
           const freshResult = applyAccountMappings(parsedRows, currentMappings);
+          const priorSummary = await prisma.dashboardMonthlySummary.findUnique({
+            where: { companyId_referenceMonth: { companyId: parsedForm.data.companyId, referenceMonth: effectiveMonth } },
+            select: { dataJson: true },
+          });
+          const mergedData = mergeSummaries(
+            (priorSummary?.dataJson ?? {}) as Record<string, number>,
+            freshResult.summary,
+            "XLSX",
+          );
           await prisma.dashboardMonthlySummary.upsert({
             where: { companyId_referenceMonth: { companyId: parsedForm.data.companyId, referenceMonth: effectiveMonth } },
-            create: { companyId: parsedForm.data.companyId, referenceMonth: effectiveMonth, dataJson: freshResult.summary },
-            update: { dataJson: freshResult.summary },
+            create: { companyId: parsedForm.data.companyId, referenceMonth: effectiveMonth, dataJson: mergedData },
+            update: { dataJson: mergedData },
           });
-          return NextResponse.json({ idempotent: true, batchId: existingBatch.id, status: existingBatch.status, summary: freshResult.summary }, { status: 200 });
+          return NextResponse.json({ idempotent: true, batchId: existingBatch.id, status: existingBatch.status, summary: mergedData }, { status: 200 });
         }
       }
 
@@ -294,6 +305,16 @@ export async function POST(request: NextRequest) {
         });
       }
 
+      const priorSummary = await tx.dashboardMonthlySummary.findUnique({
+        where: { companyId_referenceMonth: { companyId: parsedForm.data.companyId, referenceMonth: effectiveMonth } },
+        select: { dataJson: true },
+      });
+      const mergedData = mergeSummaries(
+        (priorSummary?.dataJson ?? {}) as Record<string, number>,
+        engineResult.summary,
+        "XLSX",
+      );
+
       await tx.dashboardMonthlySummary.upsert({
         where: {
           companyId_referenceMonth: {
@@ -304,10 +325,10 @@ export async function POST(request: NextRequest) {
         create: {
           companyId: parsedForm.data.companyId,
           referenceMonth: effectiveMonth,
-          dataJson: engineResult.summary,
+          dataJson: mergedData,
         },
         update: {
-          dataJson: engineResult.summary,
+          dataJson: mergedData,
         },
       });
 
@@ -360,7 +381,7 @@ export async function POST(request: NextRequest) {
       {
         idempotent: false,
         batchId: createdBatch.id,
-        summary: engineResult.summary,
+        summary: engineResult.summary,  // caller only needs P&L KPIs; mergedData is in DB
       },
       { status: 201 },
     );
@@ -494,6 +515,7 @@ async function processRazaoImport({
                 entryDate: e.entryDate,
                 accountCode: e.accountCode,
                 accountName: e.accountName,
+                costCenter: e.costCenter,
                 lot: e.lot,
                 counterpartCode: e.counterpartCode,
                 counterpartName: e.counterpartName,
@@ -506,11 +528,20 @@ async function processRazaoImport({
           }
         }
 
-        // Refresh summary
+        // Refresh summary — merge with existing so Balancete balance-sheet values survive
+        const priorSummary = await tx.dashboardMonthlySummary.findUnique({
+          where: { companyId_referenceMonth: { companyId, referenceMonth: month } },
+          select: { dataJson: true },
+        });
+        const mergedSummary = mergeSummaries(
+          (priorSummary?.dataJson ?? {}) as Record<string, number>,
+          engineResult.summary,
+          "RAZAO",
+        );
         await tx.dashboardMonthlySummary.upsert({
           where: { companyId_referenceMonth: { companyId, referenceMonth: month } },
-          create: { companyId, referenceMonth: month, dataJson: engineResult.summary },
-          update: { dataJson: engineResult.summary },
+          create: { companyId, referenceMonth: month, dataJson: mergedSummary },
+          update: { dataJson: mergedSummary },
         });
 
         // Update batch totals
@@ -540,9 +571,10 @@ async function processRazaoImport({
       continue;
     }
 
-    // Block if a DONE batch exists with a different checksum (different file for same month)
+    // Block only if another Razão import exists with a different checksum for this month.
+    // A Balancete (XLSX) for the same month is allowed to coexist.
     const conflictBatch = await prisma.importBatch.findFirst({
-      where: { companyId, referenceMonth: month, status: "DONE", NOT: { checksum } },
+      where: { companyId, referenceMonth: month, sourceType: "RAZAO", status: "DONE", NOT: { checksum } },
       select: { id: true, sourceType: true },
     });
     if (conflictBatch) {
@@ -602,6 +634,7 @@ async function processRazaoImport({
               entryDate: e.entryDate,
               accountCode: e.accountCode,
               accountName: e.accountName,
+              costCenter: e.costCenter,
               lot: e.lot,
               counterpartCode: e.counterpartCode,
               counterpartName: e.counterpartName,
@@ -614,11 +647,20 @@ async function processRazaoImport({
         }
       }
 
-      // Dashboard summary
+      // Dashboard summary — merge with existing so Balancete balance-sheet values survive
+      const priorSummary = await tx.dashboardMonthlySummary.findUnique({
+        where: { companyId_referenceMonth: { companyId, referenceMonth: month } },
+        select: { dataJson: true },
+      });
+      const mergedSummary = mergeSummaries(
+        (priorSummary?.dataJson ?? {}) as Record<string, number>,
+        engineResult.summary,
+        "RAZAO",
+      );
       await tx.dashboardMonthlySummary.upsert({
         where: { companyId_referenceMonth: { companyId, referenceMonth: month } },
-        create: { companyId, referenceMonth: month, dataJson: engineResult.summary },
-        update: { dataJson: engineResult.summary },
+        create: { companyId, referenceMonth: month, dataJson: mergedSummary },
+        update: { dataJson: mergedSummary },
       });
 
       // Unmapped accounts

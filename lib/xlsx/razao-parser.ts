@@ -2,15 +2,55 @@ import { read, utils } from "xlsx";
 
 import type { NormalizedValueColumn, ParsedAccountRow } from "./parser";
 
-// ─── Column indices (verified against real Razão files) ─────────────────────
-// Header row layout: Data | Número | Histórico | | | | Cta.C.Part. | Débito | Crédito | Saldo | | | Saldo-Exercício |
+// ─── Fixed column indices (always the same regardless of format) ─────────────
 const COL_DATE = 0;               // Excel serial date
 const COL_LOT = 1;                // Número (lote)
 const COL_DESCRIPTION = 2;        // Histórico (description text / also "SALDO ANTERIOR" marker)
-const COL_COUNTERPART_CODE = 6;   // Cta.C.Part. (counterpart account code)
-const COL_DEBIT = 7;              // Débito
-const COL_CREDIT = 8;             // Crédito
-const COL_YEAR_BALANCE = 12;      // Saldo-Exercício (cumulative from opening)
+
+// ─── Variable column layout ───────────────────────────────────────────────────
+// Each column is located by its header label, not by a fixed index.
+// Fallbacks are derived positionally only when the label is not found.
+//
+// Known layouts (for reference):
+//   "SEM CC" (14 cols): Cta.C.Part.=6, Débito=7, Crédito=8, Saldo-Exercício=12
+//   "COM CC" (11 cols): Cta.C.Part.=5, Débito=6, Crédito=7, Saldo-Exercício=9
+
+type ColumnLayout = {
+  counterpartCode: number;
+  debit: number;
+  credit: number;
+  yearBalance: number;
+};
+
+/**
+ * Detect column positions by scanning the header row that contains "Débito".
+ * Every column is resolved by its own label — no positional assumptions are
+ * made about the total number of columns. Falls back gracefully when a label
+ * is not found (using the most common known position as default).
+ */
+function detectColumnLayout(rows: string[][]): ColumnLayout {
+  for (let i = 0; i < Math.min(rows.length, 15); i++) {
+    const row = rows[i]!;
+    const debitIdx = row.findIndex((c) => normalizeText(c) === "debito");
+    if (debitIdx < 0) continue;
+
+    // Resolve each column independently by label
+    const creditIdx    = row.findIndex((c) => normalizeText(c) === "credito");
+    const yearBalIdx   = row.findIndex((c) => normalizeText(c) === "saldo-exercicio");
+    const counterpart  = row.findIndex((c) => normalizeText(c).startsWith("cta.c.part"));
+
+    return {
+      // Fallbacks: credit = one after debit; counterpart = one before debit; yearBalance = 12
+      debit:           debitIdx,
+      credit:          creditIdx >= 0     ? creditIdx    : debitIdx + 1,
+      counterpartCode: counterpart >= 0   ? counterpart  : debitIdx - 1,
+      yearBalance:     yearBalIdx >= 0    ? yearBalIdx   : 12,
+    };
+  }
+
+  // Header row not found — use the most common 14-column layout as last resort
+  return { counterpartCode: 6, debit: 7, credit: 8, yearBalance: 12 };
+}
 
 // ─── Public types ────────────────────────────────────────────────────────────
 
@@ -19,6 +59,7 @@ export type RazaoEntryData = {
   referenceMonth: string; // "YYYY-MM"
   accountCode: string;
   accountName: string;
+  costCenter: string | null;     // Centro de Custo — null when file has no CC column
   lot: string | null;
   counterpartCode: string | null;
   counterpartName: string | null;
@@ -41,6 +82,10 @@ export type ParsedRazaoResult = {
     cnpj: string | null;
     referenceMonth: string | null;   // first month
     periodEndMonth: string | null;   // last month (null when single-month)
+    /** True when the file contains explicit "Centro de Custos:" sections */
+    hasCostCenters: boolean;
+    /** Unique, sorted list of cost center names found in the file */
+    costCenters: string[];
   };
   months: string[];
   byMonth: Record<string, ParsedRazaoMonth>;
@@ -158,11 +203,15 @@ export function parseRazaoBuffer(buffer: Buffer): ParsedRazaoResult {
   const rows = rawRows.map((r) => r.map(formatCell));
   const { cnpj, periodo } = extractMetadata(rows);
 
+  // Detect column layout (adapts to 11-col CC format vs 14-col SEM CC format)
+  const layout = detectColumnLayout(rows);
+
   // ── Parse account blocks ────────────────────────────────────────────────
 
   interface AccountBlock {
     code: string;
     name: string;
+    costCenter: string | null;      // cost center this account belongs to
     saldoAnterior: number;          // from the explicit SALDO ANTERIOR line
     entries: RazaoEntryData[];
     /** running Saldo-Exercício tracked per month — last value = closing balance */
@@ -171,10 +220,20 @@ export function parseRazaoBuffer(buffer: Buffer): ParsedRazaoResult {
 
   const blocks: AccountBlock[] = [];
   let current: AccountBlock | null = null;
+  let currentCostCenter: string | null = null;
+  const costCenterSet = new Set<string>();
 
   for (let rowIdx = 0; rowIdx < rows.length; rowIdx++) {
     const r = rows[rowIdx]!;
     const rawR = rawRows[rowIdx]!;
+
+    // Cost center header row: col 0 = "Centro de Custos:"
+    if (r[COL_DATE]!.trim().toLowerCase() === "centro de custos:") {
+      const ccName = r[2]!.trim();
+      currentCostCenter = ccName || null;
+      if (ccName) costCenterSet.add(ccName);
+      continue;
+    }
 
     // Account header row: col 0 = "Conta:"
     if (r[COL_DATE]!.trim().toLowerCase() === "conta:") {
@@ -182,6 +241,7 @@ export function parseRazaoBuffer(buffer: Buffer): ParsedRazaoResult {
       current = {
         code: r[2]!.trim(),
         name: r[4]!.trim(),
+        costCenter: currentCostCenter,
         saldoAnterior: 0,
         entries: [],
         closingByMonth: {},
@@ -193,7 +253,7 @@ export function parseRazaoBuffer(buffer: Buffer): ParsedRazaoResult {
 
     // Saldo Anterior line: col 2 (Histórico) = "SALDO ANTERIOR"
     if (r[COL_DESCRIPTION]!.trim().toLowerCase() === "saldo anterior") {
-      current.saldoAnterior = parseAmount(rawR[COL_YEAR_BALANCE]);
+      current.saldoAnterior = parseAmount(rawR[layout.yearBalance]);
       continue;
     }
 
@@ -204,13 +264,13 @@ export function parseRazaoBuffer(buffer: Buffer): ParsedRazaoResult {
       const refMonth = monthFromDate(entryDate);
 
       const raw = rawRows[rowIdx]!;
-      const debit = parseAmount(raw[COL_DEBIT]);
-      const credit = parseAmount(raw[COL_CREDIT]);
-      const balance = parseAmount(raw[COL_YEAR_BALANCE]);
+      const debit = parseAmount(raw[layout.debit]);
+      const credit = parseAmount(raw[layout.credit]);
+      const balance = parseAmount(raw[layout.yearBalance]);
 
-      // Histórico (col 2) = description text; Cta.C.Part. (col 6) = counterpart code
+      // Histórico (col 2) = description text; Cta.C.Part. = counterpart code
       const description = r[COL_DESCRIPTION]!.trim() || null;
-      const counterpartCodeRaw = r[COL_COUNTERPART_CODE]!.trim();
+      const counterpartCodeRaw = r[layout.counterpartCode]!.trim();
       const counterpartCode = counterpartCodeRaw || null;
 
       current.entries.push({
@@ -218,6 +278,7 @@ export function parseRazaoBuffer(buffer: Buffer): ParsedRazaoResult {
         referenceMonth: refMonth,
         accountCode: current.code,
         accountName: current.name,
+        costCenter: current.costCenter,
         lot: r[COL_LOT]!.trim() || null,
         counterpartCode: counterpartCode || null,
         counterpartName: null,
@@ -308,6 +369,8 @@ export function parseRazaoBuffer(buffer: Buffer): ParsedRazaoResult {
       cnpj,
       referenceMonth: metaFirstMonth,
       periodEndMonth: metaLastMonth,
+      hasCostCenters: costCenterSet.size > 0,
+      costCenters: [...costCenterSet].sort(),
     },
     months: allMonths,
     byMonth,

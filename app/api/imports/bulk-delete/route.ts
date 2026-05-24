@@ -5,6 +5,7 @@ import { getUserFromRequest } from "@/lib/auth";
 import { AuditAction, writeAuditLog } from "@/lib/audit";
 import { assertCompanyAccess } from "@/lib/company-access";
 import { prisma } from "@/lib/prisma";
+import { applyAccountMappings, mergeSummaries } from "@/lib/xlsx";
 
 export const runtime = "nodejs";
 
@@ -80,7 +81,7 @@ export async function DELETE(request: NextRequest) {
       await tx.unmappedAccount.deleteMany({ where: { importBatchId: { in: deleteIds } } });
       await tx.razaoEntry.deleteMany({ where: { importBatchId: { in: deleteIds } } });
 
-      // Remove dashboard summaries for affected months (only when no remaining batch exists)
+      // Remove dashboard summaries for months with NO remaining batches
       for (const { companyId, referenceMonth } of summaryKeys.values()) {
         const remaining = await tx.importBatch.count({
           where: {
@@ -97,6 +98,52 @@ export async function DELETE(request: NextRequest) {
 
       await tx.importBatch.deleteMany({ where: { id: { in: deleteIds } } });
     });
+
+    // For months that still have surviving batches, rebuild the merged summary
+    // so the dashboard reflects only the remaining source (Balancete or Razão).
+    const mappings = await prisma.accountMapping.findMany({
+      orderBy: { createdAt: "asc" },
+      select: { id: true, dashboardField: true, matchType: true, codes: true, valueColumn: true, aggregation: true, isCalculated: true, formula: true },
+    });
+
+    for (const { companyId, referenceMonth } of summaryKeys.values()) {
+      const remainingBatches = await prisma.importBatch.findMany({
+        where: { companyId, referenceMonth, status: "DONE" },
+        orderBy: { createdAt: "asc" },
+        select: { id: true, sourceType: true },
+      });
+      if (remainingBatches.length === 0) continue; // already deleted summary above
+
+      let mergedSummary: Record<string, number> = {};
+      for (const remaining of remainingBatches) {
+        const storedRows = await prisma.ledgerEntry.findMany({
+          where: { importBatchId: remaining.id },
+          select: { accountCode: true, accountName: true, debit: true, credit: true, balance: true, rawJson: true },
+        });
+        if (storedRows.length > 0) {
+          const parsedRows = storedRows.map((r) => ({
+            accountCode: r.accountCode,
+            description: r.accountName,
+            values: {
+              debito: Number(r.debit),
+              credito: Number(r.credit),
+              saldo_atual: Number(r.balance),
+              saldo_anterior:
+                typeof r.rawJson === "object" && r.rawJson !== null
+                  ? ((r.rawJson as Record<string, unknown>).saldo_anterior as number ?? 0)
+                  : 0,
+            },
+          }));
+          const engineResult = applyAccountMappings(parsedRows, mappings);
+          mergedSummary = mergeSummaries(mergedSummary, engineResult.summary, remaining.sourceType as "XLSX" | "RAZAO");
+        }
+      }
+      await prisma.dashboardMonthlySummary.upsert({
+        where: { companyId_referenceMonth: { companyId, referenceMonth } },
+        create: { companyId, referenceMonth, dataJson: mergedSummary },
+        update: { dataJson: mergedSummary },
+      });
+    }
 
     writeAuditLog({
       userId: user.id,

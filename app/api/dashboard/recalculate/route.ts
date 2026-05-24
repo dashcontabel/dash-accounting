@@ -4,7 +4,7 @@ import { z } from "zod";
 import { getUserFromRequest } from "@/lib/auth";
 import { assertCompanyAccess } from "@/lib/company-access";
 import { prisma } from "@/lib/prisma";
-import { applyAccountMappings } from "@/lib/xlsx";
+import { applyAccountMappings, mergeSummaries } from "@/lib/xlsx";
 
 const bodySchema = z.object({
   companyId: z.string().trim().min(1),
@@ -39,44 +39,19 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Acesso negado." }, { status: 403 });
   }
 
-  const batch = await prisma.importBatch.findFirst({
+  // Find ALL DONE batches for this company+month (may be Balancete + Razão pair)
+  const batches = await prisma.importBatch.findMany({
     where: { companyId, referenceMonth, status: "DONE" },
-    orderBy: { createdAt: "desc" },
-    select: { id: true },
+    orderBy: { createdAt: "asc" }, // oldest first → Balancete base, then Razão overlay
+    select: { id: true, sourceType: true },
   });
 
-  if (!batch) {
+  if (batches.length === 0) {
     return NextResponse.json(
       { error: "Nenhum balancete importado para este periodo." },
       { status: 404 },
     );
   }
-
-  const storedRows = await prisma.ledgerEntry.findMany({
-    where: { importBatchId: batch.id },
-    select: { accountCode: true, accountName: true, debit: true, credit: true, balance: true, rawJson: true },
-  });
-
-  if (storedRows.length === 0) {
-    return NextResponse.json(
-      { error: "Sem entradas armazenadas. Reimporte o balancete para habilitar o recalculo." },
-      { status: 422 },
-    );
-  }
-
-  const parsedRows = storedRows.map((r) => ({
-    accountCode: r.accountCode,
-    description: r.accountName,
-    values: {
-      debito: Number(r.debit),
-      credito: Number(r.credit),
-      saldo_atual: Number(r.balance),
-      saldo_anterior:
-        typeof r.rawJson === "object" && r.rawJson !== null
-          ? ((r.rawJson as Record<string, unknown>).saldo_anterior as number ?? 0)
-          : 0,
-    },
-  }));
 
   const mappings = await prisma.accountMapping.findMany({
     orderBy: { createdAt: "asc" },
@@ -90,13 +65,48 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const engineResult = applyAccountMappings(parsedRows, mappings);
+  let mergedSummary: Record<string, number> = {};
+  let totalMappedAccounts = 0;
+
+  for (const batch of batches) {
+    const storedRows = await prisma.ledgerEntry.findMany({
+      where: { importBatchId: batch.id },
+      select: { accountCode: true, accountName: true, debit: true, credit: true, balance: true, rawJson: true },
+    });
+
+    if (storedRows.length === 0) continue;
+
+    const parsedRows = storedRows.map((r) => ({
+      accountCode: r.accountCode,
+      description: r.accountName,
+      values: {
+        debito: Number(r.debit),
+        credito: Number(r.credit),
+        saldo_atual: Number(r.balance),
+        saldo_anterior:
+          typeof r.rawJson === "object" && r.rawJson !== null
+            ? ((r.rawJson as Record<string, unknown>).saldo_anterior as number ?? 0)
+            : 0,
+      },
+    }));
+
+    const engineResult = applyAccountMappings(parsedRows, mappings);
+    mergedSummary = mergeSummaries(mergedSummary, engineResult.summary, batch.sourceType as "XLSX" | "RAZAO");
+    totalMappedAccounts += engineResult.mappedAccountCodes.length;
+  }
+
+  if (Object.keys(mergedSummary).length === 0) {
+    return NextResponse.json(
+      { error: "Sem entradas armazenadas. Reimporte o balancete para habilitar o recalculo." },
+      { status: 422 },
+    );
+  }
 
   await prisma.dashboardMonthlySummary.upsert({
     where: { companyId_referenceMonth: { companyId, referenceMonth } },
-    create: { companyId, referenceMonth, dataJson: engineResult.summary },
-    update: { dataJson: engineResult.summary },
+    create: { companyId, referenceMonth, dataJson: mergedSummary },
+    update: { dataJson: mergedSummary },
   });
 
-  return NextResponse.json({ summary: engineResult.summary, mappedAccounts: engineResult.mappedAccountCodes.length });
+  return NextResponse.json({ summary: mergedSummary, mappedAccounts: totalMappedAccounts });
 }

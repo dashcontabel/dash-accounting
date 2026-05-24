@@ -52,12 +52,15 @@ export default function RazaoTransactionsModal({
   companyId,
   referenceMonth,
   accountCode,
+  costCenter,
   label,
   onClose,
 }: {
   companyId: string;
   referenceMonth: string;
   accountCode: string | null;
+  /** When set, filters entries to this cost center. Use "__null__" for entries with no CC. */
+  costCenter?: string | null;
   label: string;
   onClose: () => void;
 }) {
@@ -71,6 +74,7 @@ export default function RazaoTransactionsModal({
   useEffect(() => {
     const params = new URLSearchParams({ companyId, referenceMonth, page: String(page) });
     if (accountCode) params.set("accountCode", accountCode);
+    if (costCenter !== undefined && costCenter !== null) params.set("costCenter", costCenter);
 
     setLoading(true);
     fetch(`/api/dashboard/transactions?${params.toString()}`)
@@ -81,7 +85,7 @@ export default function RazaoTransactionsModal({
       })
       .catch(() => setEntries([]))
       .finally(() => setLoading(false));
-  }, [companyId, referenceMonth, accountCode, page]);
+  }, [companyId, referenceMonth, accountCode, costCenter, page]);
 
   // Close on backdrop click
   function handleOverlayClick(e: React.MouseEvent) {
@@ -115,17 +119,27 @@ export default function RazaoTransactionsModal({
             <h2 className="mt-0.5 truncate text-sm font-bold text-zinc-800 dark:text-zinc-100">
               {label}
             </h2>
-            <p className="mt-0.5 text-xs text-zinc-400 dark:text-zinc-500">
-              {monthLabel(referenceMonth)}
-              {!loading && pagination.total > 0 && (
-                <>
-                  {" · "}
-                  <span className="font-medium text-zinc-500 dark:text-zinc-400">
-                    {pagination.total} lançamento{pagination.total !== 1 ? "s" : ""}
-                  </span>
-                </>
+            <div className="mt-0.5 flex flex-wrap items-center gap-2">
+              <p className="text-xs text-zinc-400 dark:text-zinc-500">
+                {monthLabel(referenceMonth)}
+                {!loading && pagination.total > 0 && (
+                  <>
+                    {" · "}
+                    <span className="font-medium text-zinc-500 dark:text-zinc-400">
+                      {pagination.total} lançamento{pagination.total !== 1 ? "s" : ""}
+                    </span>
+                  </>
+                )}
+              </p>
+              {costCenter !== undefined && costCenter !== null && (
+                <span className="inline-flex items-center gap-1 rounded-full bg-violet-100 px-2 py-0.5 text-[10px] font-semibold text-violet-700 dark:bg-violet-900/40 dark:text-violet-300">
+                  <svg className="h-2.5 w-2.5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" />
+                  </svg>
+                  {costCenter === "__null__" ? "Sem Centro de Custo" : costCenter}
+                </span>
               )}
-            </p>
+            </div>
           </div>
           <button
             onClick={onClose}

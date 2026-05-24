@@ -251,10 +251,11 @@ function IndexCard({
       ) : (
         <div className="mt-3 rounded-lg bg-zinc-100 px-3 py-2 dark:bg-zinc-700/50">
           <p className="text-[11px] text-zinc-500 dark:text-zinc-400">
-            Aguardando mapeamento das contas:{" "}
+            Sem dados de balanço patrimonial no arquivo importado. Para calcular este índice, importe um Balancete ou um Razão com contas de{" "}
             <span className="font-mono font-semibold">
               {config.requiredFields.join(", ")}
             </span>
+            .
           </p>
         </div>
       )}
@@ -498,7 +499,7 @@ export default function IndicesPage() {
       "PASSIVO_NAO_CIRCULANTE",
     ];
     return mergedSummaries.some((s) =>
-      allFields.some((f) => s.dataJson[f] !== undefined),
+      allFields.some((f) => s.dataJson[f] !== undefined && s.dataJson[f] !== 0),
     );
   }, [mergedSummaries]);
 
@@ -508,7 +509,7 @@ export default function IndicesPage() {
       INDICES_CONFIG.map((cfg) => ({
         key: cfg.key,
         value: cfg.calculate(d),
-        isMapped: cfg.requiredFields.some((f) => d[f] !== undefined),
+        isMapped: cfg.requiredFields.some((f) => d[f] !== undefined && d[f] !== 0),
       })),
     [d],
   );
@@ -619,35 +620,22 @@ export default function IndicesPage() {
               </svg>
               <div>
                 <p className="font-semibold text-amber-800 dark:text-amber-300">
-                  Mapeamentos de balanço patrimonial não configurados
+                  Nenhum dado de balanço patrimonial encontrado
                 </p>
                 <p className="mt-1 text-sm text-amber-700 dark:text-amber-400">
-                  Para calcular os índices, o administrador precisa criar mapeamentos com os
-                  campos:{" "}
+                  Os arquivos importados não contêm contas de ativo/passivo circulante. Para calcular os índices, importe um Balancete ou um Razão Contábil completo (com contas de prefixo{" "}
                   <code className="rounded bg-amber-100 px-1 py-0.5 text-xs font-mono dark:bg-amber-900/50">
-                    ATIVO_CIRCULANTE
+                    1.1
                   </code>
                   ,{" "}
                   <code className="rounded bg-amber-100 px-1 py-0.5 text-xs font-mono dark:bg-amber-900/50">
-                    PASSIVO_CIRCULANTE
+                    2.1
                   </code>
                   ,{" "}
                   <code className="rounded bg-amber-100 px-1 py-0.5 text-xs font-mono dark:bg-amber-900/50">
-                    ESTOQUES
+                    1.1.1
                   </code>
-                  ,{" "}
-                  <code className="rounded bg-amber-100 px-1 py-0.5 text-xs font-mono dark:bg-amber-900/50">
-                    DISPONIBILIDADES
-                  </code>
-                  ,{" "}
-                  <code className="rounded bg-amber-100 px-1 py-0.5 text-xs font-mono dark:bg-amber-900/50">
-                    REALIZAVEL_LONGO_PRAZO
-                  </code>
-                  ,{" "}
-                  <code className="rounded bg-amber-100 px-1 py-0.5 text-xs font-mono dark:bg-amber-900/50">
-                    PASSIVO_NAO_CIRCULANTE
-                  </code>
-                  .
+                  {" "}etc.).
                 </p>
               </div>
             </div>

@@ -154,6 +154,7 @@ model RazaoEntry {
   entryDate       DateTime    @db.Date
   accountCode     String
   accountName     String
+  costCenter      String?
   lot             String?
   counterpartCode String?
   counterpartName String?
@@ -165,6 +166,7 @@ model RazaoEntry {
 
   @@index([companyId, referenceMonth])
   @@index([companyId, referenceMonth, accountCode])
+  @@index([companyId, referenceMonth, costCenter])
   @@index([importBatchId])
 }
 

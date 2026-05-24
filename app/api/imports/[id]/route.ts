@@ -4,6 +4,7 @@ import { getUserFromRequest } from "@/lib/auth";
 import { AuditAction, writeAuditLog } from "@/lib/audit";
 import { assertCompanyAccess } from "@/lib/company-access";
 import { prisma } from "@/lib/prisma";
+import { applyAccountMappings, mergeSummaries } from "@/lib/xlsx";
 
 type RouteContext = {
   params: Promise<{ id: string }>;
@@ -122,13 +123,54 @@ export async function DELETE(request: NextRequest, context: RouteContext) {
     // Delete the batch — LedgerEntry and UnmappedAccount cascade automatically
     await prisma.importBatch.delete({ where: { id } });
 
-    // Remove the monthly summary if no other batch exists for this company+month
-    const remainingBatches = await prisma.importBatch.count({
-      where: { companyId: batch.companyId, referenceMonth: batch.referenceMonth },
+    // After deletion: if another batch remains for this company+month, rebuild the
+    // merged summary from its LedgerEntry rows (so balance-sheet fields from a
+    // surviving Balancete, or P&L from a surviving Razão, are preserved correctly).
+    const remainingBatches = await prisma.importBatch.findMany({
+      where: { companyId: batch.companyId, referenceMonth: batch.referenceMonth, status: "DONE" },
+      orderBy: { createdAt: "asc" },
+      select: { id: true, sourceType: true },
     });
-    if (remainingBatches === 0) {
+
+    if (remainingBatches.length === 0) {
       await prisma.dashboardMonthlySummary.deleteMany({
         where: { companyId: batch.companyId, referenceMonth: batch.referenceMonth },
+      });
+    } else {
+      const mappings = await prisma.accountMapping.findMany({
+        orderBy: { createdAt: "asc" },
+        select: { id: true, dashboardField: true, matchType: true, codes: true, valueColumn: true, aggregation: true, isCalculated: true, formula: true },
+      });
+
+      let mergedSummary: Record<string, number> = {};
+      for (const remaining of remainingBatches) {
+        const storedRows = await prisma.ledgerEntry.findMany({
+          where: { importBatchId: remaining.id },
+          select: { accountCode: true, accountName: true, debit: true, credit: true, balance: true, rawJson: true },
+        });
+        if (storedRows.length > 0) {
+          const parsedRows = storedRows.map((r) => ({
+            accountCode: r.accountCode,
+            description: r.accountName,
+            values: {
+              debito: Number(r.debit),
+              credito: Number(r.credit),
+              saldo_atual: Number(r.balance),
+              saldo_anterior:
+                typeof r.rawJson === "object" && r.rawJson !== null
+                  ? ((r.rawJson as Record<string, unknown>).saldo_anterior as number ?? 0)
+                  : 0,
+            },
+          }));
+          const engineResult = applyAccountMappings(parsedRows, mappings);
+          mergedSummary = mergeSummaries(mergedSummary, engineResult.summary, remaining.sourceType as "XLSX" | "RAZAO");
+        }
+      }
+
+      await prisma.dashboardMonthlySummary.upsert({
+        where: { companyId_referenceMonth: { companyId: batch.companyId, referenceMonth: batch.referenceMonth } },
+        create: { companyId: batch.companyId, referenceMonth: batch.referenceMonth, dataJson: mergedSummary },
+        update: { dataJson: mergedSummary },
       });
     }
 

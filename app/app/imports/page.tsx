@@ -22,7 +22,7 @@ type Company = {
 type ImportBatch = {
   id: string;
   referenceMonth: string;
-  sourceType: "XLSX";
+  sourceType: "XLSX" | "RAZAO";
   status: "PENDING" | "PROCESSING" | "DONE" | "FAILED";
   fileName: string | null;
   totalRows: number;
@@ -755,7 +755,12 @@ export default function ImportsPage() {
                     <p className="text-sm font-semibold text-foreground">
                       {batch.fileName || "Arquivo sem nome"} — {batch.referenceMonth}
                     </p>
-                    <p className="text-xs text-[--text-muted]">{new Date(batch.createdAt).toLocaleString("pt-BR")}</p>
+                    <p className="text-xs text-[--text-muted]">
+                      {new Date(batch.createdAt).toLocaleString("pt-BR")} &middot;{" "}
+                      <span className={batch.sourceType === "RAZAO" ? "text-violet-600 dark:text-violet-400" : "text-sky-600 dark:text-sky-400"}>
+                        {batch.sourceType === "RAZAO" ? "Razão" : "Balancete"}
+                      </span>
+                    </p>
                   </div>
                 </div>
                 <div className="flex items-center gap-2">

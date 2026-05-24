@@ -107,3 +107,53 @@ export function applyAccountMappings(rows: ParsedAccountRow[], mappingsInput: un
     unmappedAccounts,
   };
 }
+
+// ── Summary merge helpers ─────────────────────────────────────────────────────
+
+/**
+ * Balance sheet fields that are populated from saldo_atual (closing balances).
+ * These come from the Balancete (complete picture) rather than the Razão
+ * (which only includes accounts that had transactions in the period).
+ */
+export const BALANCE_SHEET_FIELDS: ReadonlySet<string> = new Set([
+  "SD_BANCARIO",
+  "DISPONIBILIDADES",
+  "ATIVO_CIRCULANTE",
+  "PASSIVO_CIRCULANTE",
+  "ESTOQUES",
+  "REALIZAVEL_LONGO_PRAZO",
+  "PASSIVO_NAO_CIRCULANTE",
+]);
+
+/**
+ * Merge two dashboard summaries from potentially different source types.
+ *
+ * - XLSX (Balancete): authoritative for every field it provides.
+ *   Overwrites matching fields in existing; fields only in existing are kept.
+ * - RAZAO: authoritative for P&L flow fields.
+ *   Non-zero balance-sheet values already present in `existing` (e.g. from a
+ *   prior Balancete import) are preserved so liquidity indices survive when the
+ *   Razão file does not include all balance-sheet accounts.
+ */
+export function mergeSummaries(
+  existing: Record<string, number>,
+  incoming: Record<string, number>,
+  sourceType: "XLSX" | "RAZAO",
+): Record<string, number> {
+  if (sourceType === "XLSX") {
+    // Balancete wins: preserve Razão-only extras, overwrite everything else.
+    return { ...existing, ...incoming };
+  }
+
+  // Razão: start from Razão data, then reinstate non-zero balance-sheet values
+  // that came from an existing Balancete import.
+  const merged: Record<string, number> = { ...incoming };
+  for (const field of BALANCE_SHEET_FIELDS) {
+    const existingVal = existing[field];
+    if (existingVal !== undefined && existingVal !== 0) {
+      merged[field] = existingVal;
+    }
+  }
+  return merged;
+}
+

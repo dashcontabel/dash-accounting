@@ -38,19 +38,23 @@ describe("aggregateSummaries", () => {
     expect(result[0]!.dataJson.RECEITAS_TOTAL).toBe(10000);
   });
 
-  it("bimonthly_1 returns Jan–Feb group", () => {
-    const result = aggregateSummaries(summaries2024, "bimonthly_1", "2024");
+  it("quarterly_3 returns Jul–Sep group", () => {
+    const withQ3 = [
+      ...summaries2024,
+      makeSummary("2024-07", 15000, 7000),
+      makeSummary("2024-08", 11000, 5000),
+      makeSummary("2024-09", 12000, 6000),
+    ];
+    const result = aggregateSummaries(withQ3, "quarterly_3", "2024");
     expect(result).toHaveLength(1);
-    expect(result[0]!.months).toEqual(["2024-01", "2024-02"]);
-    expect(result[0]!.dataJson.RECEITAS_TOTAL).toBe(22000);
-    expect(result[0]!.dataJson.DESPESAS_TOTAL).toBe(13000);
+    expect(result[0]!.months).toEqual(["2024-07", "2024-08", "2024-09"]);
+    expect(result[0]!.dataJson.RECEITAS_TOTAL).toBe(38000);
   });
 
-  it("bimonthly_2 returns Mar–Apr group", () => {
-    const result = aggregateSummaries(summaries2024, "bimonthly_2", "2024");
-    expect(result).toHaveLength(1);
-    expect(result[0]!.months).toEqual(["2024-03", "2024-04"]);
-    expect(result[0]!.dataJson.RECEITAS_TOTAL).toBe(24000);
+  it("quarterly_4 returns Oct–Dec group", () => {
+    const result = aggregateSummaries(summaries2024, "quarterly_4", "2024");
+    // summaries2024 only has 6 months (Jan–Jun) so result is empty
+    expect(result).toHaveLength(0);
   });
 
   it("quarterly_1 returns Jan–Mar group", () => {
@@ -81,8 +85,8 @@ describe("aggregateSummaries", () => {
   });
 
   it("averages SD_BANCARIO instead of summing", () => {
-    const result = aggregateSummaries(summaries2024, "bimonthly_1", "2024");
-    expect(result[0]!.dataJson.SD_BANCARIO).toBe(1000); // avg of 1000, 1000
+    const result = aggregateSummaries(summaries2024, "quarterly_1", "2024");
+    expect(result[0]!.dataJson.SD_BANCARIO).toBe(1000); // avg of 1000, 1000, 1000
   });
 
   it("filters to the requested year only", () => {

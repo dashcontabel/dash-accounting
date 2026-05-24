@@ -140,6 +140,18 @@ describe("Home dashboard", () => {
             json: vi.fn().mockResolvedValue({ fieldCodes: {} }),
           });
         }
+        if (url.startsWith("/api/dashboard/tenants")) {
+          return Promise.resolve({
+            ok: true,
+            json: vi.fn().mockResolvedValue({ hasTenantData: false }),
+          });
+        }
+        if (url.startsWith("/api/dashboard/cost-centers")) {
+          return Promise.resolve({
+            ok: true,
+            json: vi.fn().mockResolvedValue({ hasCostCenters: false }),
+          });
+        }
         // /api/dashboard/summary — returns new multi-company format
         return Promise.resolve({
           ok: true,
@@ -160,6 +172,6 @@ describe("Home dashboard", () => {
 
     expect(await screen.findAllByText("Receitas")).not.toHaveLength(0);
     expect(screen.getAllByText("Despesas")).not.toHaveLength(0);
-    expect(screen.getByText("Saldos Bancários")).toBeInTheDocument();
+    expect(screen.getByText("Saldo Disponível")).toBeInTheDocument();
   });
 });

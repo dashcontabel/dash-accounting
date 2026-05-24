@@ -14,15 +14,13 @@ const ALL_MONTHS = ["01","02","03","04","05","06","07","08","09","10","11","12"]
 // Visual grouping of granularity buttons
 const GRANULARITY_GROUPS: { label?: string; items: PeriodGranularity[] }[] = [
   { items: ["monthly", "annual", "range"] },
-  { label: "Bi",  items: ["bimonthly_1", "bimonthly_2"] },
-  { label: "Tri", items: ["quarterly_1", "quarterly_2"] },
+  { label: "Tri", items: ["quarterly_1", "quarterly_2", "quarterly_3", "quarterly_4"] },
   { label: "Sem", items: ["semiannual_1", "semiannual_2"] },
 ];
 
 // Short button labels to keep the UI compact
 const SHORT_LABELS: Partial<Record<PeriodGranularity, string>> = {
-  bimonthly_1: "1º", bimonthly_2: "2º",
-  quarterly_1: "1º", quarterly_2: "2º",
+  quarterly_1: "1º", quarterly_2: "2º", quarterly_3: "3º", quarterly_4: "4º",
   semiannual_1: "1º", semiannual_2: "2º",
 };
 

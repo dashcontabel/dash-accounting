@@ -23,9 +23,11 @@ vi.mock("@/lib/prisma", () => ({
     importBatch: {
       findUnique: vi.fn(),
       delete: vi.fn(),
-      count: vi.fn(),
+      findMany: vi.fn(),
     },
-    dashboardMonthlySummary: { deleteMany: vi.fn() },
+    accountMapping: { findMany: vi.fn() },
+    ledgerEntry: { findMany: vi.fn() },
+    dashboardMonthlySummary: { deleteMany: vi.fn(), upsert: vi.fn() },
     company: { update: vi.fn() },
   },
 }));
@@ -117,7 +119,7 @@ describe("DELETE /api/imports/[id]", () => {
     vi.mocked(assertCompanyAccess).mockResolvedValue(undefined as never);
     vi.mocked(prisma.importBatch.delete).mockResolvedValue({} as never);
     // No remaining batches for the month
-    vi.mocked(prisma.importBatch.count).mockResolvedValue(0 as never);
+    vi.mocked(prisma.importBatch.findMany).mockResolvedValue([] as never);
     vi.mocked(prisma.dashboardMonthlySummary.deleteMany).mockResolvedValue({ count: 1 } as never);
     vi.mocked(prisma.company.update).mockResolvedValue({} as never);
 
@@ -144,7 +146,7 @@ describe("DELETE /api/imports/[id]", () => {
     } as never);
     vi.mocked(assertCompanyAccess).mockResolvedValue(undefined as never);
     vi.mocked(prisma.importBatch.delete).mockResolvedValue({} as never);
-    vi.mocked(prisma.importBatch.count).mockResolvedValue(0 as never);
+    vi.mocked(prisma.importBatch.findMany).mockResolvedValue([] as never);
     vi.mocked(prisma.dashboardMonthlySummary.deleteMany).mockResolvedValue({ count: 1 } as never);
     vi.mocked(prisma.company.update).mockResolvedValue({} as never);
 
@@ -169,7 +171,10 @@ describe("DELETE /api/imports/[id]", () => {
     vi.mocked(assertCompanyAccess).mockResolvedValue(undefined as never);
     vi.mocked(prisma.importBatch.delete).mockResolvedValue({} as never);
     // There is still another batch for this month
-    vi.mocked(prisma.importBatch.count).mockResolvedValue(1 as never);
+    vi.mocked(prisma.importBatch.findMany).mockResolvedValue([{ id: "b-other", sourceType: "XLSX" }] as never);
+    vi.mocked(prisma.accountMapping.findMany).mockResolvedValue([] as never);
+    vi.mocked(prisma.ledgerEntry.findMany).mockResolvedValue([] as never);
+    vi.mocked(prisma.dashboardMonthlySummary.upsert).mockResolvedValue({} as never);
     vi.mocked(prisma.company.update).mockResolvedValue({} as never);
 
     await DELETE(makeRequest("b1"), makeContext("b1"));
@@ -191,7 +196,10 @@ describe("DELETE /api/imports/[id]", () => {
     vi.mocked(assertCompanyAccess).mockResolvedValue(undefined as never);
     vi.mocked(prisma.importBatch.delete).mockResolvedValue({} as never);
     // Other batch still exists — summary is kept
-    vi.mocked(prisma.importBatch.count).mockResolvedValue(1 as never);
+    vi.mocked(prisma.importBatch.findMany).mockResolvedValue([{ id: "b-other", sourceType: "XLSX" }] as never);
+    vi.mocked(prisma.accountMapping.findMany).mockResolvedValue([] as never);
+    vi.mocked(prisma.ledgerEntry.findMany).mockResolvedValue([] as never);
+    vi.mocked(prisma.dashboardMonthlySummary.upsert).mockResolvedValue({} as never);
     vi.mocked(prisma.company.update).mockResolvedValue({} as never);
 
     await DELETE(makeRequest("b2"), makeContext("b2"));

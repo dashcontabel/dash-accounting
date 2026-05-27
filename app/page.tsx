@@ -365,35 +365,23 @@ export default function Home() {
     [granularity, aggregatedPeriods],
   );
 
-  // Reset year/month when summaries reload — preserve user selection if period still exists
+  // Reset year/month when summaries reload — prefer current month, fall back to last available
   useEffect(() => {
-    if (mergedSummaries.length === 0) {
+    if (mergedSummaries.length > 0) {
+      const now = new Date();
+      const currentYM = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+      const hasCurrent = mergedSummaries.some((s) => s.referenceMonth === currentYM);
+      const target = hasCurrent
+        ? currentYM
+        : mergedSummaries[mergedSummaries.length - 1]!.referenceMonth;
+      const [y, m] = target.split("-");
+      setSelectedYear(y ?? "");
+      setSelectedMonth(m ?? "");
+    } else {
       setSelectedYear("");
       setSelectedMonth("");
-      return;
     }
-
-    // Keep current selection if it still exists in the new data
-    const currentSelection = `${selectedYear}-${selectedMonth}`;
-    if (
-      selectedYear &&
-      selectedMonth &&
-      mergedSummaries.some((s) => s.referenceMonth === currentSelection)
-    ) {
-      return;
-    }
-
-    // Otherwise prefer current month, fall back to last available
-    const now = new Date();
-    const currentYM = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
-    const hasCurrent = mergedSummaries.some((s) => s.referenceMonth === currentYM);
-    const target = hasCurrent
-      ? currentYM
-      : mergedSummaries[mergedSummaries.length - 1]!.referenceMonth;
-    const [y, m] = target.split("-");
-    setSelectedYear(y ?? "");
-    setSelectedMonth(m ?? "");
-  }, [mergedSummaries, selectedYear, selectedMonth]);
+  }, [mergedSummaries]);
 
   // Active KPI data:
   //   monthly   → selected month
@@ -1121,14 +1109,6 @@ export default function Home() {
                             </>
                           ) : (
                             <>
-                              <div className="mb-3 grid grid-cols-2 gap-x-4 gap-y-1.5 md:flex md:flex-wrap md:gap-x-4 md:gap-y-1.5">
-                                {companiesData.map((company, i) => (
-                                  <span key={company.companyId} className="flex min-w-0 items-center gap-1.5">
-                                    <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: COMPANY_COLORS[i % COMPANY_COLORS.length] }} />
-                                    <span className="max-w-30 truncate text-[10px] text-zinc-500 dark:text-zinc-400 sm:max-w-40">{company.companyName}</span>
-                                  </span>
-                                ))}
-                              </div>
                               <p className="mb-2 text-xs font-semibold text-zinc-500 dark:text-zinc-400">Receitas por empresa</p>
                               {comparativeSeries.length > 0 ? (
                                 <ResponsiveContainer width="100%" height={160}>
@@ -1137,6 +1117,11 @@ export default function Home() {
                                     <XAxis dataKey="period" tick={{ fontSize: 10, fill: chartTheme.tick }} axisLine={false} tickLine={false} interval="preserveStartEnd" />
                                     <YAxis tickFormatter={formatCurrencyShort} width={52} tick={{ fontSize: 10, fill: chartTheme.tick }} axisLine={false} tickLine={false} />
                                     <Tooltip formatter={currencyTooltipFormatter} contentStyle={{ fontSize: 12, borderRadius: 10, border: `1px solid ${chartTheme.tooltip.border}`, background: chartTheme.tooltip.background, boxShadow: "0 4px 12px rgba(0,0,0,.15)" }} labelStyle={{ fontWeight: 600, color: chartTheme.tooltip.label }} />
+                                    <Legend
+                                      iconSize={8}
+                                      wrapperStyle={{ fontSize: 10, paddingTop: 6, lineHeight: "18px" }}
+                                      formatter={(value: string) => value.length > 20 ? `${value.slice(0, 18)}…` : value}
+                                    />
                                     {companiesData.map((company, i) => (
                                       <Bar key={company.companyId} dataKey={company.companyName} fill={COMPANY_COLORS[i % COMPANY_COLORS.length]} radius={[4, 4, 0, 0]} />
                                     ))}
@@ -1153,6 +1138,11 @@ export default function Home() {
                                     <XAxis dataKey="period" tick={{ fontSize: 10, fill: chartTheme.tick }} axisLine={false} tickLine={false} interval="preserveStartEnd" />
                                     <YAxis tickFormatter={formatCurrencyShort} width={52} tick={{ fontSize: 10, fill: chartTheme.tick }} axisLine={false} tickLine={false} />
                                     <Tooltip formatter={currencyTooltipFormatter} contentStyle={{ fontSize: 12, borderRadius: 10, border: `1px solid ${chartTheme.tooltip.border}`, background: chartTheme.tooltip.background, boxShadow: "0 4px 12px rgba(0,0,0,.15)" }} labelStyle={{ fontWeight: 600, color: chartTheme.tooltip.label }} />
+                                    <Legend
+                                      iconSize={8}
+                                      wrapperStyle={{ fontSize: 10, paddingTop: 6, lineHeight: "18px" }}
+                                      formatter={(value: string) => value.length > 20 ? `${value.slice(0, 18)}…` : value}
+                                    />
                                     {companiesData.map((company, i) => (
                                       <Bar key={company.companyId} dataKey={company.companyName} fill={COMPANY_COLORS[i % COMPANY_COLORS.length]} radius={[4, 4, 0, 0]} />
                                     ))}

@@ -22,7 +22,7 @@ type Company = {
 type ImportBatch = {
   id: string;
   referenceMonth: string;
-  sourceType: "XLSX" | "RAZAO";
+  sourceType: "XLSX" | "RAZAO" | "XLSX_CONSOLIDATED";
   status: "PENDING" | "PROCESSING" | "DONE" | "FAILED";
   fileName: string | null;
   totalRows: number;
@@ -46,7 +46,7 @@ type BatchFileResult = {
   detectedMonth: string | null;
 };
 
-const MAX_BATCH_FILES = 12;
+const MAX_BATCH_FILES = 24;
 
 export default function ImportsPage() {
   const router = useRouter();
@@ -73,7 +73,6 @@ export default function ImportsPage() {
   const [batchInputKey, setBatchInputKey] = useState(0);
 
   // List filter + pagination
-  const [listCompanyId, setListCompanyId] = useState("");
   const [filterMonth, setFilterMonth] = useState("");
   const [filterStatus, setFilterStatus] = useState<"" | "DONE" | "FAILED" | "PENDING" | "PROCESSING">("");
   const [filterName, setFilterName] = useState("");
@@ -161,7 +160,6 @@ export default function ImportsPage() {
         setMe(data.user);
         setCompanies(allowedCompanies);
         setSelectedCompanyId(initialCompanyId);
-        setListCompanyId(initialCompanyId);
         setReferenceMonth(new Date().toISOString().slice(0, 7));
 
         if (initialCompanyId) {
@@ -211,10 +209,8 @@ export default function ImportsPage() {
       }
 
       if (data.idempotent) {
-        // Backend re-applied current mappings and updated the summary even for duplicate files.
-        // Mark stale so Índices/Dashboard fetch fresh data on next navigation.
         markCompanyStale(selectedCompanyId);
-        toast.warning("Arquivo já importado — mapeamentos reaplicados.", { id: uploadToastId });
+        toast.warning("Arquivo já importado para este período.", { id: uploadToastId });
       } else {
         toast.success("Importação concluída com sucesso!", { id: uploadToastId });
         markCompanyStale(selectedCompanyId);
@@ -228,8 +224,6 @@ export default function ImportsPage() {
       // Reset file state and input element so the button unlocks for the next import
       setFile(null);
       setFileInputKey((k) => k + 1);
-      // Switch list view to the company just uploaded so the result is immediately visible
-      setListCompanyId(selectedCompanyId);
       await loadBatches(selectedCompanyId);
     } catch {
       toast.error("Falha no upload. Verifique sua conexão e tente novamente.", { id: uploadToastId });
@@ -240,22 +234,6 @@ export default function ImportsPage() {
 
   async function handleCompanyChange(companyId: string) {
     setSelectedCompanyId(companyId);
-  }
-
-  async function handleListCompanyChange(companyId: string) {
-    setListCompanyId(companyId);
-    setExpandedBatchId(null);
-    setCurrentPage(1);
-
-    if (companyId) {
-      try {
-        await loadBatches(companyId);
-      } catch (error) {
-        toast.error(error instanceof Error ? error.message : "Falha ao carregar imports.");
-      }
-    } else {
-      setBatches([]);
-    }
   }
 
   async function handleToggleBatch(batchId: string) {
@@ -290,7 +268,7 @@ export default function ImportsPage() {
       if (expandedBatchId === batchId) setExpandedBatchId(null);
       setBatchSummaries((prev) => { const next = { ...prev }; delete next[batchId]; return next; });
       setSelectedIds((prev) => { const next = new Set(prev); next.delete(batchId); return next; });
-      await loadBatches(listCompanyId || selectedCompanyId);
+      await loadBatches(selectedCompanyId);
     } catch {
       toast.error("Falha ao excluir import.", { id: deleteToastId });
     } finally {
@@ -322,7 +300,7 @@ export default function ImportsPage() {
       } else {
         toast.success(`${deleted} import${deleted !== 1 ? "s" : ""} excluído${deleted !== 1 ? "s" : ""} com sucesso.`, { id: toastId });
       }
-      markCompanyStale(listCompanyId || selectedCompanyId);
+      markCompanyStale(selectedCompanyId);
       setSelectedIds(new Set(failed)); // keep only the ones that failed
       setBatchSummaries((prev) => {
         const next = { ...prev };
@@ -332,7 +310,7 @@ export default function ImportsPage() {
       if (expandedBatchId && !failed.includes(expandedBatchId) && selectedIds.has(expandedBatchId)) {
         setExpandedBatchId(null);
       }
-      await loadBatches(listCompanyId || selectedCompanyId);
+      await loadBatches(selectedCompanyId);
     } catch {
       toast.error("Falha ao excluir imports.", { id: toastId });
     } finally {
@@ -401,8 +379,6 @@ export default function ImportsPage() {
     }
 
     setIsBatchRunning(false);
-    // Switch list view to the batch-uploaded company
-    setListCompanyId(selectedCompanyId);
     await loadBatches(selectedCompanyId);
   }
 
@@ -447,7 +423,7 @@ export default function ImportsPage() {
                 : "text-[--text-muted] hover:bg-[--surface-2]"
             }`}
           >
-            Importar em lote (até 12 meses)
+            Importar em lote (até 24 arquivos)
           </button>
         </div>
 
@@ -621,19 +597,8 @@ export default function ImportsPage() {
       {!isLoading ? (
         <section className="mt-6 space-y-3">
           {/* ── Filters ── */}
+          {batches.length > 0 && (
           <div className="flex flex-wrap gap-2 rounded-xl border border-[--border] bg-[--surface] p-3">
-            {/* Company filter */}
-            <select
-              value={listCompanyId}
-              onChange={(e) => void handleListCompanyChange(e.target.value)}
-              className="rounded-lg border border-[--border] bg-[--surface-2] px-3 py-1.5 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-brand/40 dark:scheme-dark dark:bg-[#1a2540] dark:text-zinc-100 [&_option]:dark:bg-[#1a2540] [&_option]:dark:text-zinc-100"
-              title="Filtrar por empresa"
-            >
-              <option value="">Todas as empresas</option>
-              {companies.map((c) => (
-                <option key={c.id} value={c.id}>{c.name}</option>
-              ))}
-            </select>
             <input
               type="month"
               value={filterMonth}
@@ -668,10 +633,8 @@ export default function ImportsPage() {
                 Limpar filtros
               </button>
             )}
-            <span className="ml-auto self-center text-xs text-[--text-muted]">
-              {filteredBatches.length} de {batches.length} registros
-            </span>
           </div>
+          )}
 
           {/* ── Bulk action bar ── */}
           {me?.role === "ADMIN" && filteredBatches.length > 0 && (
@@ -757,8 +720,14 @@ export default function ImportsPage() {
                     </p>
                     <p className="text-xs text-[--text-muted]">
                       {new Date(batch.createdAt).toLocaleString("pt-BR")} &middot;{" "}
-                      <span className={batch.sourceType === "RAZAO" ? "text-violet-600 dark:text-violet-400" : "text-sky-600 dark:text-sky-400"}>
-                        {batch.sourceType === "RAZAO" ? "Razão" : "Balancete"}
+                      <span className={
+                        batch.sourceType === "RAZAO" ? "text-violet-600 dark:text-violet-400" :
+                        batch.sourceType === "XLSX_CONSOLIDATED" ? "text-amber-600 dark:text-amber-400" :
+                        "text-sky-600 dark:text-sky-400"
+                      }>
+                        {batch.sourceType === "RAZAO" ? "Razão" :
+                         batch.sourceType === "XLSX_CONSOLIDATED" ? "Balancete Consolidado" :
+                         "Balancete"}
                       </span>
                     </p>
                   </div>

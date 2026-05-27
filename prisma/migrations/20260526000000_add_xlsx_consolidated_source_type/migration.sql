@@ -1,0 +1,2 @@
+-- AlterEnum
+ALTER TYPE "ImportSourceType" ADD VALUE 'XLSX_CONSOLIDATED';

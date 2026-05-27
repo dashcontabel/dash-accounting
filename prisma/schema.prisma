@@ -28,6 +28,7 @@ enum ImportBatchStatus {
 enum ImportSourceType {
   XLSX
   RAZAO
+  XLSX_CONSOLIDATED
 }
 
 enum MappingMatchType {

@@ -94,9 +94,18 @@ export async function POST(request: NextRequest) {
     // Parse the file upfront to extract metadata (CNPJ, period) and validate the sheet
     const parsedWorkbook = parseXlsxBuffer(fileBuffer, file.name);
 
-    // Determine the reference month: form field takes priority, then file metadata
+    // Detect consolidated balancete (covers multiple months — start → periodEndMonth)
+    const isConsolidated = Boolean(parsedWorkbook.metadata?.periodEndMonth);
+    const sourceType = isConsolidated ? "XLSX_CONSOLIDATED" : "XLSX";
+
+    // Determine the reference month:
+    // - User-provided takes priority
+    // - For consolidated files, fall back to periodEndMonth (end of covered period)
+    // - For regular files, fall back to the detected month
     const effectiveMonth =
-      parsedForm.data.referenceMonth ?? parsedWorkbook.metadata?.referenceMonth ?? null;
+      parsedForm.data.referenceMonth ??
+      (isConsolidated ? parsedWorkbook.metadata!.periodEndMonth : parsedWorkbook.metadata?.referenceMonth) ??
+      null;
 
     if (!effectiveMonth || !/^\d{4}-(0[1-9]|1[0-2])$/.test(effectiveMonth)) {
       return NextResponse.json(
@@ -107,13 +116,13 @@ export async function POST(request: NextRequest) {
 
     // Run both validation queries in parallel — both depend only on data already available.
     const [existingDoneBatch, cnpjCompany] = await Promise.all([
-      // Block only when a Balancete (XLSX) already exists for this company+month.
-      // A Razão import may coexist with a Balancete in the same month.
+      // Block only when the same sourceType already exists for this company+month.
+      // XLSX and XLSX_CONSOLIDATED may coexist; Razão may coexist with both.
       prisma.importBatch.findFirst({
         where: {
           companyId: parsedForm.data.companyId,
           referenceMonth: effectiveMonth,
-          sourceType: "XLSX",
+          sourceType,
           status: "DONE",
           NOT: { checksum },
         },
@@ -129,10 +138,12 @@ export async function POST(request: NextRequest) {
     ]);
 
     if (existingDoneBatch) {
-      const existingType = existingDoneBatch.sourceType === "RAZAO" ? "Razão" : "Balancete";
+      const existingTypeLabel =
+        existingDoneBatch.sourceType === "RAZAO" ? "Razão" :
+        existingDoneBatch.sourceType === "XLSX_CONSOLIDATED" ? "Balancete Consolidado" : "Balancete";
       return NextResponse.json(
         {
-          error: `O mes ${effectiveMonth} ja possui uma importacao de ${existingType} concluida. Para substituir, exclua o import existente antes de reimportar.`,
+          error: `O mes ${effectiveMonth} ja possui uma importacao de ${existingTypeLabel} concluida. Para substituir, exclua o import existente antes de reimportar.`,
           conflictMonth: effectiveMonth,
           existingSourceType: existingDoneBatch.sourceType,
         },
@@ -151,20 +162,9 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Validate that the file is not a consolidated (multi-month) report
-    if (parsedWorkbook.metadata?.periodEndMonth) {
-      const [startMon, startYear] = (parsedWorkbook.metadata.referenceMonth ?? "").split("-").reverse();
-      const [endMon, endYear] = parsedWorkbook.metadata.periodEndMonth.split("-").reverse();
-      return NextResponse.json(
-        {
-          error: `Balancete consolidado detectado (${startMon}/${startYear} até ${endMon}/${endYear}). Importe apenas balancetes mensais, um mês por arquivo.`,
-        },
-        { status: 422 },
-      );
-    }
-
-    // Validate that the period in the file matches the referenceMonth selected by the user
-    if (parsedForm.data.referenceMonth && parsedWorkbook.metadata?.referenceMonth) {
+    // For regular (non-consolidated) files, validate that the detected period matches
+    // the referenceMonth selected by the user
+    if (!isConsolidated && parsedForm.data.referenceMonth && parsedWorkbook.metadata?.referenceMonth) {
       if (parsedWorkbook.metadata.referenceMonth !== parsedForm.data.referenceMonth) {
         const [fileYear, fileMon] = parsedWorkbook.metadata.referenceMonth.split("-");
         const [selYear, selMon] = parsedForm.data.referenceMonth.split("-");
@@ -255,7 +255,7 @@ export async function POST(request: NextRequest) {
       data: {
         companyId: parsedForm.data.companyId,
         referenceMonth: effectiveMonth,
-        sourceType: "XLSX",
+        sourceType,
         status: "PENDING",
         checksum,
         fileName: file.name || null,

@@ -316,11 +316,15 @@ export default function CostCenterSection({
   const displayItems = useMemo((): CostCenterSummaryItem[] => {
     if (!data?.items) return [];
     const items = data.items.map((i) => ({ ...i }));
-    const nullIdx = items.findIndex((i) => i.costCenter === null);
-    if (nullIdx === -1) return items;
-    const nullItem = items[nullIdx]!;
     const normalize = (s: string) =>
       s.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+    const nullIdx = items.findIndex((i) => {
+      if (i.costCenter == null || i.costCenter.trim() === "") return true;
+      const n = normalize(i.costCenter);
+      return n.includes("sem centro") || n === "sem cc";
+    });
+    if (nullIdx === -1) return items;
+    const nullItem = items[nullIdx]!;
     const placaIdx = items.findIndex((i) => {
       if (!i.costCenter) return false;
       const n = normalize(i.costCenter);

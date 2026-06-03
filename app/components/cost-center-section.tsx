@@ -391,7 +391,7 @@ export default function CostCenterSection({
       {!loading && data?.hasCostCenters && (
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-5">
           {/* CC cards — ocupam 3/5 em telas grandes */}
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3 lg:col-span-3">
+          <div className={`grid grid-cols-1 gap-4 lg:col-span-3 ${displayItems.length <= 2 ? "sm:grid-cols-2" : "sm:grid-cols-3"}`}>
             {displayItems.map((item, idx) => (
               <CostCenterCard
                 key={item.costCenter ?? "__null__"}

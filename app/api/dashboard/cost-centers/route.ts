@@ -100,8 +100,10 @@ export async function GET(request: NextRequest) {
     // Load non-calculated mapping rules that measure P&L flow (valueColumn = debito | credito).
     // Balance-sheet mappings use saldo_atual/saldo_anterior (they measure a closing balance, not
     // the transaction flow) and must be excluded so CC totals reconcile with the KPI cards.
+    // Rules with showInCostCenter=false (e.g. DISTRIB_LUCROS / equity distributions) are also
+    // excluded so that balance-sheet movements don't distort the CC comparison chart.
     const mappingRules = await prisma.accountMapping.findMany({
-      where: { isCalculated: false, valueColumn: { in: ["debito", "credito"] } },
+      where: { isCalculated: false, valueColumn: { in: ["debito", "credito"] }, showInCostCenter: true },
       select: { matchType: true, codes: true },
     });
     const mappedAccountFilter = buildMappedAccountFilter(mappingRules);

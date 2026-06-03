@@ -148,12 +148,13 @@ const defaultMappings = [
   },
   {
     dashboardField: "DISTRIB_LUCROS",
-    matchType: "PREFIX",
-    codes: ["1.1.6"],
+    matchType: "LIST",
+    codes: ["1.1.6", "2.3.50.100.1"],
     valueColumn: "debito",
     aggregation: "ABS_SUM",
     isCalculated: false,
     formula: null,
+    showInCostCenter: false,
   },
   {
     dashboardField: "DEMAIS_DESPESAS",

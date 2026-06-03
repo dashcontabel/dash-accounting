@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import dynamic from "next/dynamic";
 import {
   ResponsiveContainer,
@@ -311,6 +311,33 @@ export default function CostCenterSection({
     };
   }, [companyId, referenceMonth]);
 
+  // TEMP FIX (apresentação): mescla entradas "sem CC" no centro de custo PLACA/ADM
+  // e oculta o card "Sem Centro de Custo" gerado por erro de importação.
+  const displayItems = useMemo((): CostCenterSummaryItem[] => {
+    if (!data?.items) return [];
+    const items = data.items.map((i) => ({ ...i }));
+    const nullIdx = items.findIndex((i) => i.costCenter === null);
+    if (nullIdx === -1) return items;
+    const nullItem = items[nullIdx]!;
+    const normalize = (s: string) =>
+      s.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+    const placaIdx = items.findIndex((i) => {
+      if (!i.costCenter) return false;
+      const n = normalize(i.costCenter);
+      return n.includes("placa") || (n.includes("adm") && !n.includes("admin"));
+    });
+    if (placaIdx !== -1) {
+      items[placaIdx] = {
+        ...items[placaIdx]!,
+        totalDebit: items[placaIdx]!.totalDebit + nullItem.totalDebit,
+        totalCredit: items[placaIdx]!.totalCredit + nullItem.totalCredit,
+        accountCount: items[placaIdx]!.accountCount + nullItem.accountCount,
+      };
+    }
+    items.splice(nullIdx, 1);
+    return items;
+  }, [data]);
+
   // Don't render anything if there are no cost centers
   if (!loading && (!data || !data.hasCostCenters)) return null;
 
@@ -361,7 +388,7 @@ export default function CostCenterSection({
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-5">
           {/* CC cards — ocupam 3/5 em telas grandes */}
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-3 lg:col-span-3">
-            {data.items.map((item, idx) => (
+            {displayItems.map((item, idx) => (
               <CostCenterCard
                 key={item.costCenter ?? "__null__"}
                 item={item}
@@ -377,7 +404,7 @@ export default function CostCenterSection({
           </div>
           {/* Chart — ocupa 2/5 em telas grandes */}
           <div className="lg:col-span-2">
-            <CostCenterChart items={data.items} />
+            <CostCenterChart items={displayItems} />
           </div>
         </div>
       )}

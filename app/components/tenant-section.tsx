@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -323,6 +323,37 @@ export default function TenantSection({
   // Hide silently when there is no tenant data for this company
   if (!data || !data.hasTenantData) return null;
 
+  // TEMP FIX (apresentação): mescla "Sem Centro de Custo" no PLACA/ADM.
+  // eslint-disable-next-line react-hooks/rules-of-hooks
+  const displayData = useMemo((): TenantSummaryResponse => {
+    if (!data) return data!;
+    const norm = (s: string) =>
+      s.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+    const isSemCC = (cc: string) => {
+      const n = norm(cc);
+      return n.includes("sem centro") || n === "sem cc" || cc.trim() === "";
+    };
+    const isPlaca = (cc: string) => {
+      const n = norm(cc);
+      return n.includes("placa") || (n.includes("adm") && !n.includes("admin"));
+    };
+    const semCCKey = data.costCenters.find(isSemCC);
+    const placaKey = data.costCenters.find(isPlaca);
+    if (!semCCKey) return data;
+    const newCostCenters = data.costCenters.filter((cc) => !isSemCC(cc));
+    const newItems = data.items.map((item) => {
+      const semVal = item.byCostCenter[semCCKey] ?? 0;
+      if (semVal === 0) return item;
+      const newByCostCenter = { ...item.byCostCenter };
+      delete newByCostCenter[semCCKey];
+      if (placaKey) {
+        newByCostCenter[placaKey] = (newByCostCenter[placaKey] ?? 0) + semVal;
+      }
+      return { ...item, byCostCenter: newByCostCenter };
+    });
+    return { ...data, costCenters: newCostCenters, items: newItems };
+  }, [data]);
+
   return (
     <section className="mt-4">
       {/* Section header */}
@@ -354,17 +385,17 @@ export default function TenantSection({
 
       {/* Consolidated summary */}
       <div className="mb-4">
-        <TenantSummary items={data.items} costCenters={data.costCenters} />
+        <TenantSummary items={displayData.items} costCenters={displayData.costCenters} />
       </div>
 
       {/* Per-tenant cards */}
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-        {data.items.map((item, idx) => (
+        {displayData.items.map((item, idx) => (
           <TenantCard
             key={idx}
             item={item}
-            costCenters={data.costCenters}
-            totalMonths={data.totalMonths}
+            costCenters={displayData.costCenters}
+            totalMonths={displayData.totalMonths}
           />
         ))}
       </div>

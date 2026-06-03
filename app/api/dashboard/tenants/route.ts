@@ -13,13 +13,23 @@ export const runtime = "nodejs";
  * Will be moved to DB config in a future iteration.
  */
 const KNOWN_TENANTS = [
-  "João",
-  "Manoel",
-  "José",
-  "Maria",
+  "Barbara",
+  "Magna (Reuse)",
+  "Daniela",
+  "Silvia",
+  "Evelyn/Ivson",
+  "Gabriel",
+  "Thais",
   "Pedro",
-  "Gustavo",
+  "Cleyde/Carlos",
 ] as const;
+
+// Alternative spellings/forms found in source descriptions.
+const TENANT_ALIASES: Record<string, string[]> = {
+  "Magna (Reuse)": ["Magna", "Magna Reuse", "Magna (Reuse)"],
+  "Evelyn/Ivson": ["Evelyn/Ivson", "Evelyn / Ivson", "Evelyn", "Ivson"],
+  "Cleyde/Carlos": ["Cleyde/Carlos", "Cleyde / Carlos", "Cleyde", "Carlos"],
+};
 
 function normalize(s: string) {
   return s
@@ -28,11 +38,23 @@ function normalize(s: string) {
     .toLowerCase();
 }
 
+function normalizeLoose(s: string) {
+  return normalize(s).replace(/[^a-z0-9]/g, "");
+}
+
 /** Returns the canonical tenant label if description mentions a known tenant; null otherwise. */
 function matchTenant(description: string): string | null {
   const norm = normalize(description);
+  const looseNorm = normalizeLoose(description);
   for (const tenant of KNOWN_TENANTS) {
-    if (norm.includes(normalize(tenant))) return tenant;
+    const aliases = TENANT_ALIASES[tenant] ?? [tenant];
+    for (const alias of aliases) {
+      const aliasNorm = normalize(alias);
+      const aliasLoose = normalizeLoose(alias);
+      if (norm.includes(aliasNorm) || looseNorm.includes(aliasLoose)) {
+        return tenant;
+      }
+    }
   }
   return null;
 }
@@ -53,6 +75,11 @@ const SKIP_SURNAME_WORDS = new Set([
  *   - matches another known tenant first name
  */
 function extractDisplayName(description: string, canonicalFirst: string): string {
+  // For combined labels, keep canonical formatting exactly as configured.
+  if (canonicalFirst.includes("/") || canonicalFirst.includes("(")) {
+    return canonicalFirst;
+  }
+
   const words = description.trim().split(/\s+/);
   const normFirst = normalize(canonicalFirst);
   const knownNorms = (KNOWN_TENANTS as readonly string[]).map(normalize);

@@ -45,10 +45,13 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "Nao autenticado." }, { status: 401 });
   }
 
+  // accountCode may be sent as a single param or repeated (multi-code OR filter)
+  const rawAccountCodes = request.nextUrl.searchParams.getAll("accountCode").filter(Boolean);
+
   const parsed = querySchema.safeParse({
     companyId: request.nextUrl.searchParams.get("companyId") ?? "",
     referenceMonth: request.nextUrl.searchParams.get("referenceMonth") ?? "",
-    accountCode: request.nextUrl.searchParams.get("accountCode") ?? undefined,
+    accountCode: rawAccountCodes[0] ?? undefined,
     costCenter: request.nextUrl.searchParams.get("costCenter") ?? undefined,
     page: request.nextUrl.searchParams.get("page") ?? 1,
   });
@@ -57,7 +60,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "Parametros invalidos." }, { status: 400 });
   }
 
-  const { companyId, referenceMonth, accountCode, costCenter, page } = parsed.data;
+  const { companyId, referenceMonth, costCenter, page } = parsed.data;
 
   try {
     await assertCompanyAccess(user, companyId);
@@ -65,11 +68,15 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "Acesso negado." }, { status: 403 });
   }
 
-  // Build the account-code filter to match the same logic as the mapping engine:
-  // prefix "3.2.1" matches "3.2.1.0.1" AND "3.2.10.800.3" (plain startsWith, no trailing dot).
-  const accountFilter = accountCode
-    ? { accountCode: { startsWith: accountCode } }
-    : {};
+  // Build the account-code filter. When multiple codes are provided (e.g. DISTRIB_LUCROS
+  // uses a LIST mapping with several codes) combine them with OR + startsWith so that the
+  // same prefix-match logic used by the mapping engine applies to each code.
+  const accountFilter =
+    rawAccountCodes.length === 0
+      ? {}
+      : rawAccountCodes.length === 1
+        ? { accountCode: { startsWith: rawAccountCodes[0]! } }
+        : { OR: rawAccountCodes.map((c) => ({ accountCode: { startsWith: c } })) };
 
   // "__null__" is the sentinel value used by the CC UI for entries with no cost center
   const costCenterFilter = costCenter

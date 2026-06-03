@@ -52,6 +52,7 @@ export default function RazaoTransactionsModal({
   companyId,
   referenceMonth,
   accountCode,
+  accountCodes,
   costCenter,
   label,
   onClose,
@@ -59,6 +60,8 @@ export default function RazaoTransactionsModal({
   companyId: string;
   referenceMonth: string;
   accountCode: string | null;
+  /** When provided, overrides accountCode and filters by multiple codes (OR logic). */
+  accountCodes?: string[];
   /** When set, filters entries to this cost center. Use "__null__" for entries with no CC. */
   costCenter?: string | null;
   label: string;
@@ -73,7 +76,9 @@ export default function RazaoTransactionsModal({
   // Fetch whenever page or filter changes
   useEffect(() => {
     const params = new URLSearchParams({ companyId, referenceMonth, page: String(page) });
-    if (accountCode) params.set("accountCode", accountCode);
+    // Multi-code filter takes priority; falls back to single accountCode
+    const codes = accountCodes && accountCodes.length > 0 ? accountCodes : accountCode ? [accountCode] : [];
+    for (const c of codes) params.append("accountCode", c);
     if (costCenter !== undefined && costCenter !== null) params.set("costCenter", costCenter);
 
     setLoading(true);

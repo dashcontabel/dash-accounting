@@ -243,13 +243,13 @@ function CostCenterCard({
       <div className="mt-3 grid grid-cols-2 gap-2">
         <div>
           <p className="text-[10px] font-semibold uppercase text-zinc-400 dark:text-zinc-500">Débitos</p>
-          <p className="mt-0.5 text-xs font-bold text-zinc-700 dark:text-zinc-200">
+          <p className="mt-0.5 text-xs font-bold text-red-600 dark:text-red-400">
             {formatCurrency(item.totalDebit)}
           </p>
         </div>
         <div>
           <p className="text-[10px] font-semibold uppercase text-zinc-400 dark:text-zinc-500">Créditos</p>
-          <p className="mt-0.5 text-xs font-bold text-zinc-700 dark:text-zinc-200">
+          <p className="mt-0.5 text-xs font-bold text-emerald-600 dark:text-emerald-400">
             {formatCurrency(item.totalCredit)}
           </p>
         </div>
@@ -258,11 +258,7 @@ function CostCenterCard({
       {/* Net result */}
       <div className="mt-3 border-t border-current/10 pt-3">
         <p className="text-[10px] font-semibold uppercase text-zinc-400 dark:text-zinc-500">Resultado líq.</p>
-        <p
-          className={`mt-0.5 text-sm font-extrabold ${
-            result >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-red-600 dark:text-red-400"
-          }`}
-        >
+        <p className="mt-0.5 text-sm font-extrabold text-blue-600 dark:text-blue-400">
           {result >= 0 ? "+" : ""}
           {formatCurrency(result)}
         </p>

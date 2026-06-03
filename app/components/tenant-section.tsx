@@ -320,13 +320,9 @@ export default function TenantSection({
     return <p className="mt-4 text-xs text-red-500 dark:text-red-400">{error}</p>;
   }
 
-  // Hide silently when there is no tenant data for this company
-  if (!data || !data.hasTenantData) return null;
-
   // TEMP FIX (apresentação): mescla "Sem Centro de Custo" no PLACA/ADM.
-  // eslint-disable-next-line react-hooks/rules-of-hooks
-  const displayData = useMemo((): TenantSummaryResponse => {
-    if (!data) return data!;
+  const displayData = useMemo((): TenantSummaryResponse | null => {
+    if (!data) return null;
     const norm = (s: string) =>
       s.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
     const isSemCC = (cc: string) => {
@@ -353,6 +349,9 @@ export default function TenantSection({
     });
     return { ...data, costCenters: newCostCenters, items: newItems };
   }, [data]);
+
+  // Hide silently when there is no tenant data for this company
+  if (!displayData || !displayData.hasTenantData) return null;
 
   return (
     <section className="mt-4">

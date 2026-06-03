@@ -307,19 +307,6 @@ export default function TenantSection({
     };
   }, [companyId, year]);
 
-  if (loading) {
-    return (
-      <div className="mt-4 flex items-center gap-2 py-6 pl-1 text-xs text-zinc-400 dark:text-zinc-500">
-        <div className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
-        Carregando locatários…
-      </div>
-    );
-  }
-
-  if (error) {
-    return <p className="mt-4 text-xs text-red-500 dark:text-red-400">{error}</p>;
-  }
-
   // TEMP FIX (apresentação): mescla "Sem Centro de Custo" no PLACA/ADM.
   const displayData = useMemo((): TenantSummaryResponse | null => {
     if (!data) return null;
@@ -349,6 +336,19 @@ export default function TenantSection({
     });
     return { ...data, costCenters: newCostCenters, items: newItems };
   }, [data]);
+
+  if (loading) {
+    return (
+      <div className="mt-4 flex items-center gap-2 py-6 pl-1 text-xs text-zinc-400 dark:text-zinc-500">
+        <div className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
+        Carregando locatários…
+      </div>
+    );
+  }
+
+  if (error) {
+    return <p className="mt-4 text-xs text-red-500 dark:text-red-400">{error}</p>;
+  }
 
   // Hide silently when there is no tenant data for this company
   if (!displayData || !displayData.hasTenantData) return null;

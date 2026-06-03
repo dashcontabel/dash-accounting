@@ -20,30 +20,33 @@ type AssetRow = {
 
 // ── Hardcoded data (31/12/2025) ───────────────────────────────────────────────
 
-const REFERENCE_DATE = "31/12/2025";
+const REFERENCE_DATE = "15/06/2026";
 
 const ASSET_ROWS: AssetRow[] = [
-  // ── Seção: Ativos Financeiros ─────────────────────────────────────────────
-  { label: "Ativos Financeiros", economico: null, financeiro: null, isSection: true },
-  { label: "APLICAÇÕES BANCO DO BRASIL", economico: null, financeiro: null },
-  { label: "APLICAÇÕES BANCO ITAÚ",      economico: null, financeiro: 0 },
-  { label: "APLICAÇÕES - XP",            economico: null, financeiro: null },
-
-  { label: "MÓVEIS E EQUIPAMENTOS",      economico: 0,          financeiro: null },
+  { label: "SALDOS BANCO DO BRASIL",       economico: 0,              financeiro: 2_694_740.19 },
+  { label: "SALDOS BANCO ITAÚ",            economico: 0,              financeiro:   486_107.15 },
+  { label: "OUTROS ATIVOS",                economico: 0,              financeiro: null },
+  { label: "A RECEBER - PLACA",            economico: 65_023.70,     financeiro: null },
+  { label: "MÓVEIS E EQUIPAMENTOS",        economico: 0,              financeiro: null },
   {
     label: "COTAS PATRIM. - PETRA × LRA2",
     sublabel: "Cotas patrimoniais",
-    economico: 286_325.40, financeiro: null,
+    economico: 31_850.00, financeiro: null,
   },
   {
     label: "COTAS PATRIM. - PETRA × LRA3",
     sublabel: "Cotas patrimoniais",
-    economico: 140_787.50, financeiro: null,
+    economico: 95_625.00, financeiro: null,
   },
   {
     label: "COTAS PATRIM. - PETRA × B.VISTA",
     sublabel: "Cotas patrimoniais",
-    economico: 609_600.00, financeiro: null,
+    economico: 300_000.00, financeiro: null,
+  },
+  {
+    label: "COTAS PATRIM. - PETRA × JFN PART.",
+    sublabel: "Cotas patrimoniais",
+    economico: 300_000.00, financeiro: null,
   },
   {
     label: "COTAS PATRIM. - AMPM × TRAPICHE",
@@ -52,18 +55,16 @@ const ASSET_ROWS: AssetRow[] = [
   },
   {
     label: "PATRIMÔNIO PRODUZIDO",
-    economico: 1_157_338.75,
-    financeiro: null,
+    economico: 806_598.70,
+    financeiro: 3_180_847.34,
     isTotal: true,
   },
-
-  // ── Imóveis + A Receber ───────────────────────────────────────────────────────
-  { label: "A RECEBER - PLACA",          economico: 120_625.85, financeiro: null },
-  { label: "IMÓVEIS", sublabel: "GALEIRA 586", economico: 505_000.00, financeiro: null },
+  { label: "IMÓVEIS", sublabel: "GALEIRA 586",   economico: 505_000.00,   financeiro: null },
+  { label: "IMÓVEL EMP. PONTOS",                 economico: 3_700_000.00, financeiro: null },
   {
     label: "TOTAL DO PATRIMÔNIO",
-    economico: 1_662_338.75,
-    financeiro: null,
+    economico: 5_011_598.70,
+    financeiro: 3_180_847.34,
     isTotal: true,
   },
 ];
@@ -143,8 +144,10 @@ export default function PatrimonioPage() {
     router.push("/login");
   }
 
-  const economicoTotal = ASSET_ROWS.find((r) => r.label === "TOTAL DO PATRIMÔNIO")?.economico ?? null;
-  const patrimonioProduced = ASSET_ROWS.find((r) => r.label === "PATRIMÔNIO PRODUZIDO")?.economico ?? null;
+  const totalRow = ASSET_ROWS.find((r) => r.label === "TOTAL DO PATRIMÔNIO");
+  const economicoTotal = totalRow ? (totalRow.economico ?? 0) + (totalRow.financeiro ?? 0) : null;
+  const ppRow = ASSET_ROWS.find((r) => r.label === "PATRIMÔNIO PRODUZIDO");
+  const patrimonioProduced = ppRow ? (ppRow.economico ?? 0) + (ppRow.financeiro ?? 0) : null;
   const imovelValue = ASSET_ROWS.find((r) => r.sublabel === "GALEIRA 586")?.economico ?? null;
 
   return (

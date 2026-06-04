@@ -8,27 +8,40 @@ import { prisma } from "@/lib/prisma";
 export const runtime = "nodejs";
 
 /**
- * Hardcoded list of canonical tenant names.
- * Matching is accent- and case-insensitive substring search.
- * Will be moved to DB config in a future iteration.
+ * Canonical tenant keys — used only for matching against DB descriptions.
+ * Display names are defined separately in SL_DISPLAY below.
  */
 const KNOWN_TENANTS = [
   "Barbara",
-  "Magna (Reuse)",
+  "Magna",
   "Daniela",
   "Silvia",
   "Evelyn/Ivson",
   "Gabriel",
   "Thais",
-  "Pedro",
   "Cleyde/Carlos",
 ] as const;
 
 // Alternative spellings/forms found in source descriptions.
 const TENANT_ALIASES: Record<string, string[]> = {
-  "Magna (Reuse)": ["Magna", "Magna Reuse", "Magna (Reuse)"],
-  "Evelyn/Ivson": ["Evelyn/Ivson", "Evelyn / Ivson", "Evelyn", "Ivson"],
+  "Magna":         ["Magna", "Magna Reuse", "Magna (Reuse)"],
+  "Evelyn/Ivson":  ["Evelyn/Ivson", "Evelyn / Ivson", "Evelyn", "Ivson"],
   "Cleyde/Carlos": ["Cleyde/Carlos", "Cleyde / Carlos", "Cleyde", "Carlos"],
+};
+
+/**
+ * De/Para: canonical key → display label shown in the UI.
+ * Sl-XX = slot number, followed by trade name and responsible person.
+ */
+const SL_DISPLAY: Record<string, string> = {
+  "Barbara":       "Sl-01 Hamb. Mafalda — Bárbara",
+  "Magna":         "Sl-02 Pano pra Manga — Magna",
+  "Daniela":       "Sl-03 Quiosque — Daniela",
+  "Silvia":        "Sl-04 Com. Fulô — Silvia",
+  "Evelyn/Ivson":  "Sl-05 Nail Artist — Ivson",
+  "Gabriel":       "Sl-06 Ágil Arquit — Gabriel",
+  "Thais":         "Sl-07 Psicologia — Thais",
+  "Cleyde/Carlos": "Cleyde/Carlos",
 };
 
 function normalize(s: string) {
@@ -237,9 +250,13 @@ export async function GET(request: NextRequest) {
       if (!g.description || !g.costCenter) continue;
       const tenantKey = matchTenant(g.description);
       if (!tenantKey) continue; // skip entries that don't belong to any known tenant
-      // Capture display name from the first description seen for this tenant
+      // Use SL_DISPLAY label; fall back to extractDisplayName for unknown keys
       if (!tenantDisplayNames.has(tenantKey)) {
-        tenantDisplayNames.set(tenantKey, extractDisplayName(g.description, tenantKey));
+        const slLabel = SL_DISPLAY[tenantKey];
+        tenantDisplayNames.set(
+          tenantKey,
+          slLabel ?? extractDisplayName(g.description, tenantKey),
+        );
       }
       if (!byTenant.has(tenantKey)) byTenant.set(tenantKey, {});
       const cc = byTenant.get(tenantKey)!;

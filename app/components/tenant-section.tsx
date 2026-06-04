@@ -79,12 +79,21 @@ function TenantCard({
       >
         <div className="flex items-start justify-between gap-3 mb-2.5">
           <div className="min-w-0">
-            <p className="text-sm font-bold text-zinc-800 dark:text-zinc-100 truncate leading-tight">
-              {item.description}
-            </p>
-            <p className="mt-0.5 text-[10px] text-zinc-400 dark:text-zinc-500 uppercase tracking-wide">
-              Locatário
-            </p>
+            {(() => {
+              const parts = item.description.split(" — ");
+              const slotName = parts[0] ?? item.description;
+              const responsible = parts[1];
+              return (
+                <>
+                  <p className="text-sm font-bold text-zinc-800 dark:text-zinc-100 truncate leading-tight">
+                    {slotName}
+                  </p>
+                  <p className="mt-0.5 text-[10px] text-zinc-400 dark:text-zinc-500 uppercase tracking-wide">
+                    {responsible ?? "Locatário"}
+                  </p>
+                </>
+              );
+            })()}
           </div>
           <div className="shrink-0 text-right">
             <p className="text-sm font-bold text-blue-600 dark:text-blue-400 tabular-nums">

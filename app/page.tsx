@@ -133,7 +133,7 @@ function KpiCard({
           </span>
         )}
       </div>
-      <p className={`mt-3 min-w-0 truncate text-sm font-bold sm:text-base ${c.value}`}>{formatCurrency(value)}</p>
+      <p className={`mt-2 min-w-0 truncate text-2xl font-extrabold sm:text-3xl ${c.value}`}>{formatCurrency(value)}</p>
       {sub ? <p className="mt-1.5 text-[11px] text-zinc-400 dark:text-zinc-500">{sub}</p> : null}
     </article>
   );

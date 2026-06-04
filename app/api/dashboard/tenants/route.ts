@@ -41,7 +41,7 @@ const SL_DISPLAY: Record<string, string> = {
   "Evelyn/Ivson":  "Sl-05 Nail Artist — Ivson",
   "Gabriel":       "Sl-06 Ágil Arquit — Gabriel",
   "Thais":         "Sl-07 Psicologia — Thais",
-  "Cleyde/Carlos": "Cleyde/Carlos",
+  "Cleyde/Carlos": "Sl-10 Refinari — Cleyde/Carlos",
 };
 
 function normalize(s: string) {

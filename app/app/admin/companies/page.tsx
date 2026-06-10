@@ -23,6 +23,12 @@ type Group = {
   id: string;
   name: string;
   isActive: boolean;
+  _count?: { companies: number };
+};
+
+type GroupForm = {
+  name: string;
+  isActive: boolean;
 };
 
 type MeResponse = {
@@ -53,9 +59,19 @@ export default function AdminCompaniesPage() {
   const [companies, setCompanies] = useState<Company[]>([]);
   const [groups, setGroups] = useState<Group[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+
+  // Company modal
   const [isOpen, setIsOpen] = useState(false);
   const [editing, setEditing] = useState<Company | null>(null);
   const [form, setForm] = useState<CompanyForm>(initialForm);
+
+  // Group modal
+  const [isGroupOpen, setIsGroupOpen] = useState(false);
+  const [editingGroup, setEditingGroup] = useState<Group | null>(null);
+  const [groupForm, setGroupForm] = useState<GroupForm>({ name: "", isActive: true });
+
+  // Active tab
+  const [activeTab, setActiveTab] = useState<"companies" | "groups">("companies");
 
   const load = useCallback(async () => {
     const [meRes, companiesRes, groupsRes] = await Promise.all([
@@ -156,6 +172,51 @@ export default function AdminCompaniesPage() {
     await load();
   }
 
+  // ── Group CRUD ─────────────────────────────────────────────────────────────
+
+  function openCreateGroup() {
+    setEditingGroup(null);
+    setGroupForm({ name: "", isActive: true });
+    setIsGroupOpen(true);
+  }
+
+  function openEditGroup(group: Group) {
+    setEditingGroup(group);
+    setGroupForm({ name: group.name, isActive: group.isActive });
+    setIsGroupOpen(true);
+  }
+
+  async function handleSaveGroup(event: FormEvent) {
+    event.preventDefault();
+    const url = editingGroup ? `/api/admin/groups/${editingGroup.id}` : "/api/admin/groups";
+    const method = editingGroup ? "PATCH" : "POST";
+    const response = await fetch(url, {
+      method,
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(groupForm),
+    });
+    if (!response.ok) {
+      const data = (await response.json()) as { error?: string };
+      toast.error(data.error ?? "Falha ao salvar grupo.");
+      return;
+    }
+    toast.success(editingGroup ? "Grupo atualizado." : "Grupo criado.");
+    setIsGroupOpen(false);
+    await load();
+  }
+
+  async function handleDeleteGroup(groupId: string) {
+    if (!await confirmToast("Deseja remover este grupo? Empresas vinculadas serão afetadas.")) return;
+    const response = await fetch(`/api/admin/groups/${groupId}`, { method: "DELETE" });
+    if (!response.ok) {
+      const data = (await response.json()) as { error?: string };
+      toast.error(data.error ?? "Falha ao remover grupo.");
+      return;
+    }
+    toast.success("Grupo removido.");
+    await load();
+  }
+
   async function handleLogout() {
     await fetch("/api/auth/logout", { method: "POST" });
     router.push("/login");
@@ -164,25 +225,57 @@ export default function AdminCompaniesPage() {
 
   return (
     <AppShell role={me?.role ?? null} email={me?.email ?? null} onLogout={handleLogout}>
+      {/* Header */}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-2xl font-semibold text-foreground">Empresas</h1>
+          <h1 className="text-2xl font-semibold text-foreground">Empresas &amp; Grupos</h1>
           <p className="mt-1 text-sm text-[--text-muted]">
-            Estruture empresas por grupo com status operacional claro.
+            Crie e gerencie grupos e associe empresas a eles.
           </p>
         </div>
-        <button
-          type="button"
-          onClick={openCreate}
-          className="rounded-xl bg-brand px-4 py-2.5 text-sm font-medium text-white hover:opacity-90 dark:hover:opacity-80"
-        >
-          Nova empresa
-        </button>
+        <div className="flex gap-2">
+          {activeTab === "groups" && (
+            <button
+              type="button"
+              onClick={openCreateGroup}
+              className="rounded-xl border border-blue-200 bg-blue-50 px-4 py-2.5 text-sm font-medium text-blue-700 hover:bg-blue-100 dark:border-blue-800/50 dark:bg-blue-900/20 dark:text-blue-300 dark:hover:bg-blue-900/40"
+            >
+              Novo grupo
+            </button>
+          )}
+          {activeTab === "companies" && (
+            <button
+              type="button"
+              onClick={openCreate}
+              className="rounded-xl bg-brand px-4 py-2.5 text-sm font-medium text-white hover:opacity-90 dark:hover:opacity-80"
+            >
+              Nova empresa
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Tabs */}
+      <div className="mt-5 flex gap-1 rounded-xl border border-[--border] bg-[--surface-2] p-1">
+        {(["companies", "groups"] as const).map((tab) => (
+          <button
+            key={tab}
+            type="button"
+            onClick={() => setActiveTab(tab)}
+            className={`flex-1 rounded-lg px-4 py-2 text-sm font-medium transition-colors ${
+              activeTab === tab
+                ? "bg-[--surface] text-foreground shadow-sm"
+                : "text-[--text-muted] hover:text-foreground"
+            }`}
+          >
+            {tab === "companies" ? `Empresas (${companies.length})` : `Grupos (${groups.length})`}
+          </button>
+        ))}
       </div>
 
       {isLoading ? <p className="mt-6 text-sm text-[--text-muted]">Carregando...</p> : null}
 
-      {!isLoading ? (
+      {!isLoading && activeTab === "companies" ? (
         <>
           {/* Mobile card list */}
           <div className="mt-6 grid gap-3 md:hidden">
@@ -284,6 +377,83 @@ export default function AdminCompaniesPage() {
         </>
       ) : null}
 
+      {/* ── Groups Tab ── */}
+      {!isLoading && activeTab === "groups" ? (
+        <>
+          <div className="mt-6 grid gap-3 md:hidden">
+            {groups.map((group) => (
+              <article key={group.id} className="rounded-xl border border-[--border] bg-[--surface] p-4 shadow-sm">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="text-sm font-semibold text-foreground">{group.name}</p>
+                    <p className="text-xs text-[--text-muted]">{group._count?.companies ?? 0} empresa(s)</p>
+                  </div>
+                  <span className={`rounded-full px-2 py-1 text-[11px] font-medium ${
+                    group.isActive
+                      ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-400"
+                      : "bg-zinc-100 text-zinc-600 dark:bg-zinc-700/40 dark:text-zinc-400"
+                  }`}>
+                    {group.isActive ? "ATIVO" : "INATIVO"}
+                  </span>
+                </div>
+                <div className="mt-4 flex gap-2">
+                  <button type="button" onClick={() => openEditGroup(group)}
+                    className="rounded-lg border border-[--border] bg-[--surface-2] px-2 py-1 text-xs text-foreground hover:bg-[--border]">
+                    Editar
+                  </button>
+                  <button type="button" onClick={() => void handleDeleteGroup(group.id)}
+                    className="rounded-lg border border-red-200 px-2 py-1 text-xs text-red-700 hover:bg-red-50 dark:border-red-900/50 dark:text-red-400 dark:hover:bg-red-950/30">
+                    Remover
+                  </button>
+                </div>
+              </article>
+            ))}
+          </div>
+
+          <div className="mt-6 hidden overflow-hidden rounded-xl border border-[--border] bg-[--surface] md:block">
+            <table className="min-w-full text-left text-sm">
+              <thead>
+                <tr className="border-b border-[--border] bg-[--surface-2] text-[--text-muted]">
+                  <th className="px-4 py-3 font-medium">Nome</th>
+                  <th className="px-4 py-3 font-medium">Empresas</th>
+                  <th className="px-4 py-3 font-medium">Status</th>
+                  <th className="px-4 py-3 font-medium">Ações</th>
+                </tr>
+              </thead>
+              <tbody>
+                {groups.map((group) => (
+                  <tr key={group.id} className="border-b border-[--border] last:border-0 hover:bg-[--surface-2] transition-colors">
+                    <td className="px-4 py-3 font-medium text-foreground">{group.name}</td>
+                    <td className="px-4 py-3 text-[--text-muted]">{group._count?.companies ?? 0}</td>
+                    <td className="px-4 py-3">
+                      <span className={`rounded-full px-2 py-1 text-xs font-medium ${
+                        group.isActive
+                          ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-400"
+                          : "bg-zinc-100 text-zinc-600 dark:bg-zinc-700/40 dark:text-zinc-400"
+                      }`}>
+                        {group.isActive ? "ATIVO" : "INATIVO"}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="flex gap-2">
+                        <button type="button" onClick={() => openEditGroup(group)}
+                          className="rounded-lg border border-[--border] bg-[--surface-2] px-2 py-1 text-xs text-foreground hover:bg-[--border]">
+                          Editar
+                        </button>
+                        <button type="button" onClick={() => void handleDeleteGroup(group.id)}
+                          className="rounded-lg border border-red-200 px-2 py-1 text-xs text-red-700 hover:bg-red-50 dark:border-red-900/50 dark:text-red-400 dark:hover:bg-red-950/30">
+                          Remover
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
+      ) : null}
+
       {isOpen ? (
         <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm">
           <form
@@ -348,6 +518,59 @@ export default function AdminCompaniesPage() {
               <button
                 type="button"
                 onClick={() => setIsOpen(false)}
+                className="rounded-xl border border-[--border] bg-[--surface-2] px-4 py-2 text-sm text-foreground hover:bg-[--border]"
+              >
+                Cancelar
+              </button>
+              <button
+                type="submit"
+                className="rounded-xl bg-brand px-4 py-2 text-sm font-medium text-white hover:opacity-90"
+              >
+                Salvar
+              </button>
+            </div>
+          </form>
+        </div>
+      ) : null}
+
+      {/* ── Group Modal ── */}
+      {isGroupOpen ? (
+        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm">
+          <form
+            onSubmit={(event) => void handleSaveGroup(event)}
+            className="w-full max-w-md rounded-2xl border border-[--border] bg-[--surface] p-6 shadow-2xl"
+          >
+            <h2 className="text-xl font-semibold text-foreground">
+              {editingGroup ? "Editar grupo" : "Novo grupo"}
+            </h2>
+            <p className="mt-1 text-sm text-[--text-muted]">
+              Grupos agrupam empresas para controle multi-tenant.
+            </p>
+            <div className="mt-4 grid gap-4">
+              <label className="text-sm font-medium text-foreground">
+                Nome do grupo
+                <input
+                  value={groupForm.name}
+                  onChange={(e) => setGroupForm((g) => ({ ...g, name: e.target.value }))}
+                  required
+                  placeholder="Ex: Grupo Principal"
+                  className="mt-1 w-full rounded-xl border border-[--border] bg-[--surface-2] px-3 py-2.5 text-foreground placeholder:text-[--text-muted] focus:outline-none focus:ring-2 focus:ring-brand/40"
+                />
+              </label>
+              <label className="flex items-center gap-2 text-sm font-medium text-foreground">
+                <input
+                  type="checkbox"
+                  checked={groupForm.isActive}
+                  onChange={(e) => setGroupForm((g) => ({ ...g, isActive: e.target.checked }))}
+                  className="rounded border-[--border] accent-brand"
+                />
+                Grupo ativo
+              </label>
+            </div>
+            <div className="mt-6 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setIsGroupOpen(false)}
                 className="rounded-xl border border-[--border] bg-[--surface-2] px-4 py-2 text-sm text-foreground hover:bg-[--border]"
               >
                 Cancelar

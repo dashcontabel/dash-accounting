@@ -103,7 +103,7 @@ const navItems = [
   },
   {
     href: "/app/admin/companies",
-    label: "Empresas",
+    label: "Empresas & Grupos",
     adminOnly: true,
     icon: (
       <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">

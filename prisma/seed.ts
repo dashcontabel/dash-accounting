@@ -280,6 +280,36 @@ async function main() {
   } else {
     console.log("Demo Razao data already present. Skipping.");
   }
+
+  // ── Patrimônio Assets (seed historical data from 31/12/2025) ────────────
+  // Uses upsert-by-label+month+group so re-running is safe.
+  const PATRIMONIO_MONTH = "2025-12";
+  const existingPatrimonio = await prisma.patrimonioAsset.count({
+    where: { groupId: group.id, referenceMonth: PATRIMONIO_MONTH },
+  });
+
+  if (existingPatrimonio === 0) {
+    await prisma.patrimonioAsset.createMany({
+      data: [
+        { groupId: group.id, referenceMonth: PATRIMONIO_MONTH, sortOrder: 0,  rowType: "SECTION",  label: "Ativos Financeiros",              sublabel: null,                   economico: null,        financeiro: null },
+        { groupId: group.id, referenceMonth: PATRIMONIO_MONTH, sortOrder: 10, rowType: "ASSET",    label: "APLICAÇÕES BANCO DO BRASIL",      sublabel: null,                   economico: null,        financeiro: null },
+        { groupId: group.id, referenceMonth: PATRIMONIO_MONTH, sortOrder: 20, rowType: "ASSET",    label: "APLICAÇÕES BANCO ITAÚ",           sublabel: null,                   economico: null,        financeiro: 0 },
+        { groupId: group.id, referenceMonth: PATRIMONIO_MONTH, sortOrder: 30, rowType: "ASSET",    label: "APLICAÇÕES - XP",                 sublabel: null,                   economico: null,        financeiro: null },
+        { groupId: group.id, referenceMonth: PATRIMONIO_MONTH, sortOrder: 40, rowType: "ASSET",    label: "MÓVEIS E EQUIPAMENTOS",           sublabel: null,                   economico: 0,           financeiro: null },
+        { groupId: group.id, referenceMonth: PATRIMONIO_MONTH, sortOrder: 50, rowType: "ASSET",    label: "COTAS PATRIM. - PETRA × LRA2",    sublabel: "Cotas patrimoniais",   economico: 286325.40,   financeiro: null },
+        { groupId: group.id, referenceMonth: PATRIMONIO_MONTH, sortOrder: 60, rowType: "ASSET",    label: "COTAS PATRIM. - PETRA × LRA3",    sublabel: "Cotas patrimoniais",   economico: 140787.50,   financeiro: null },
+        { groupId: group.id, referenceMonth: PATRIMONIO_MONTH, sortOrder: 70, rowType: "ASSET",    label: "COTAS PATRIM. - PETRA × B.VISTA", sublabel: "Cotas patrimoniais",   economico: 609600.00,   financeiro: null },
+        { groupId: group.id, referenceMonth: PATRIMONIO_MONTH, sortOrder: 80, rowType: "ASSET",    label: "COTAS PATRIM. - AMPM × TRAPICHE", sublabel: "Cotas patrimoniais",   economico: 14100.00,    financeiro: null },
+        { groupId: group.id, referenceMonth: PATRIMONIO_MONTH, sortOrder: 90, rowType: "SUBTOTAL", label: "PATRIMÔNIO PRODUZIDO",            sublabel: null,                   economico: 1157338.75,  financeiro: null },
+        { groupId: group.id, referenceMonth: PATRIMONIO_MONTH, sortOrder: 100, rowType: "ASSET",   label: "A RECEBER - PLACA",               sublabel: null,                   economico: 120625.85,   financeiro: null },
+        { groupId: group.id, referenceMonth: PATRIMONIO_MONTH, sortOrder: 110, rowType: "ASSET",   label: "IMÓVEIS",                         sublabel: "GALEIRA 586",           economico: 505000.00,   financeiro: null },
+        { groupId: group.id, referenceMonth: PATRIMONIO_MONTH, sortOrder: 120, rowType: "TOTAL",   label: "TOTAL DO PATRIMÔNIO",             sublabel: null,                   economico: 1662338.75,  financeiro: null },
+      ],
+    });
+    console.log(`Seeded ${13} patrimônio assets for ${PATRIMONIO_MONTH}.`);
+  } else {
+    console.log("Patrimônio data already present. Skipping.");
+  }
 }
 
 main()

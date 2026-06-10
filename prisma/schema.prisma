@@ -63,13 +63,21 @@ model User {
   updatedAt         DateTime      @updatedAt
 }
 
+enum PatrimonioRowType {
+  SECTION
+  ASSET
+  SUBTOTAL
+  TOTAL
+}
+
 model Group {
-  id        String    @id @default(cuid())
-  name      String    @unique
-  isActive  Boolean   @default(true)
-  companies Company[]
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
+  id               String             @id @default(cuid())
+  name             String             @unique
+  isActive         Boolean            @default(true)
+  companies        Company[]
+  patrimonioAssets PatrimonioAsset[]
+  createdAt        DateTime           @default(now())
+  updatedAt        DateTime           @updatedAt
 }
 
 model Company {
@@ -225,6 +233,11 @@ enum AuditAction {
   COMPANY_CREATE
   COMPANY_UPDATE
   COMPANY_DELETE
+  PATRIMONIO_CREATE
+  PATRIMONIO_UPDATE
+  PATRIMONIO_DELETE
+  GROUP_CREATE
+  GROUP_UPDATE
 }
 
 model AuditLog {
@@ -248,4 +261,26 @@ model SystemConfig {
   key       String   @id
   value     String
   updatedAt DateTime @updatedAt
+}
+
+model PatrimonioAsset {
+  id             String             @id @default(cuid())
+  groupId        String
+  group          Group              @relation(fields: [groupId], references: [id], onDelete: Restrict)
+  sectionId      String?
+  section        PatrimonioAsset?   @relation("PatrimonioSectionItems", fields: [sectionId], references: [id], onDelete: SetNull)
+  items          PatrimonioAsset[]  @relation("PatrimonioSectionItems")
+  referenceMonth String
+  label          String
+  sublabel       String?
+  rowType        PatrimonioRowType  @default(ASSET)
+  economico      Decimal?           @db.Decimal(18, 2)
+  financeiro     Decimal?           @db.Decimal(18, 2)
+  sortOrder      Int                @default(0)
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
+
+  @@index([groupId, referenceMonth])
+  @@index([sectionId])
+  @@index([groupId])
 }

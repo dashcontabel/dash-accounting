@@ -6,6 +6,7 @@
 O fluxo central envolve balancete/razao em XLSX/XLS/CSV, parsing, validacao, persistencia e visualizacao gerencial.
 Admins gerenciam usuarios, empresas, grupos, mapeamentos, imports, auditoria e patrimonio.
 Clientes acessam somente empresas/grupos vinculados.
+Ha tambem a rota `/app/rentabilidade`, que mostra um demonstrativo multiempresa de rentabilidade liquida, rendimento bruto, IOF/IRRF e saldos bancarios usando os resumos mensais ja autorizados.
 
 ---
 
@@ -37,6 +38,7 @@ Conceitos criticos:
 - `sourceType`: `XLSX`, `RAZAO`, `XLSX_CONSOLIDATED`.
 - Mapeamentos por `EXACT`, `PREFIX`, `LIST`, `SUM`, `ABS_SUM` e formulas calculadas.
 - Isolamento de dados por empresa/grupo.
+- Rentabilidade: `/app/rentabilidade` monta visao de demonstrativo com empresas nas linhas, saldo de 31/12 do ano anterior, rentabilidade liquida mes a mes, totais trimestrais e saldo final do periodo. A composicao por clique usa os campos `RENDIMENTO_BRUTO`, `IOF_IRRF`, `RENTABILIDADE` e `SD_BANCARIO` do `DashboardMonthlySummary`.
 - Locatarios: `/api/dashboard/tenants` calcula recebido por historico e, quando o Razao tem contas a receber por locatario, calcula `payment` mensal com provisionado, pago, saldo em aberto e status (`PAID`, `OPEN`, `PARTIAL`). A exibicao dos cards respeita `CompanySetting` com a chave `dashboard.tenants.display`.
 
 ---

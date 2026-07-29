@@ -54,6 +54,7 @@ Fluxos de dominio:
 
 - Login cria cookie HTTP-only `dash_contabil_session` com JWT.
 - Dashboard consulta `/api/auth/me`, empresas permitidas e `/api/dashboard/summary`.
+- Rentabilidade consulta `/api/auth/me` e `/api/dashboard/summary` para montar um demonstrativo multiempresa com saldo inicial, rentabilidade liquida mensal, totais trimestrais e saldo final.
 - Importacao recebe arquivo, valida empresa/permissao, detecta formato, parseia linhas, aplica mapeamentos, cria lote e atualiza `DashboardMonthlySummary`.
 - Mapeamentos podem ser semeados via `/api/admin/mappings/seed`.
 - Clientes acessam apenas empresas/grupos ligados por `UserCompany`.
@@ -165,6 +166,32 @@ Mudancas em dashboard fields ou formulas afetam resumos, indices e visualizacoes
 Pontos de atencao:
 - Testar mapeamentos estaticos e calculados.
 - Atualizar seeds e documentacao quando novo campo gerencial for criado.
+
+### Regra: Demonstrativo de rentabilidade
+
+Descricao:
+A rota `/app/rentabilidade` apresenta uma visao em formato de demonstrativo por empresa, usando os resumos mensais ja calculados. A tabela mostra empresas nas linhas, saldo bancario em 31/12 do ano anterior, rentabilidade liquida mes a mes, total por trimestre dentro do intervalo selecionado e saldo bancario final do periodo.
+
+Onde aparece:
+- `app/app/rentabilidade/page.tsx`
+- `lib/dashboard/rentabilidade.ts`
+- `app/components/app-shell.tsx`
+- `app/api/dashboard/summary/route.ts`
+
+Impacto no codigo:
+A tela nao cria nova API nem nova tabela. Ela reutiliza `/api/auth/me` para descobrir empresas permitidas e `/api/dashboard/summary` para buscar os dados, preservando a validacao backend de usuario ativo, empresa ativa, grupo ativo e vinculo `UserCompany` para clientes.
+
+Campos usados:
+- `SD_BANCARIO`
+- `RENDIMENTO_BRUTO`
+- `IOF_IRRF`
+- `RENTABILIDADE`
+
+Pontos de atencao:
+- O saldo inicial depende do resumo de dezembro do ano anterior (`YYYY-12`).
+- A rentabilidade liquida usa `RENTABILIDADE` quando existe; se faltar, e derivada de `RENDIMENTO_BRUTO - IOF_IRRF`.
+- Detalhe por conta bancaria nao esta disponivel no resumo mensal; se for exigido, criar endpoint protegido usando `LedgerEntry`/`RazaoEntry` e validar acesso por empresa no backend.
+- Nao duplicar regras de permissao no frontend; qualquer dado novo deve continuar vindo de endpoint autorizado.
 
 ### Regra: Merge entre balancete e razao
 

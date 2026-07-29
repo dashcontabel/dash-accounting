@@ -396,7 +396,7 @@ export default function RentabilidadePage() {
 
   return (
     <AppShell role={userRole} email={userEmail} onLogout={handleLogout}>
-      <div className="space-y-5">
+      <div className="min-w-0 space-y-5">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
           <div>
             <h1 className="text-2xl font-bold text-zinc-900 dark:text-zinc-50">
@@ -573,9 +573,9 @@ export default function RentabilidadePage() {
               />
             </div>
 
-            <section className="overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-sm dark:border-zinc-700 dark:bg-zinc-900/60">
-              <div className="flex flex-col gap-1 border-b border-zinc-100 bg-zinc-50 px-4 py-3 dark:border-zinc-800 dark:bg-zinc-900 sm:flex-row sm:items-center sm:justify-between">
-                <div>
+            <section className="min-w-0 overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-sm dark:border-zinc-700 dark:bg-zinc-900/60">
+              <div className="flex min-w-0 flex-col gap-1 border-b border-zinc-100 bg-zinc-50 px-4 py-3 dark:border-zinc-800 dark:bg-zinc-900 sm:flex-row sm:items-center sm:justify-between">
+                <div className="min-w-0">
                   <h2 className="text-sm font-bold text-zinc-800 dark:text-zinc-100">
                     Demonstrativo de rentabilidade
                   </h2>
@@ -588,50 +588,55 @@ export default function RentabilidadePage() {
                 </p>
               </div>
 
-              <div className="overflow-x-auto">
-                <table className="w-full min-w-[980px] border-collapse text-sm">
-                  <thead>
-                    <tr className="border-b border-zinc-200 bg-white dark:border-zinc-700 dark:bg-zinc-900">
-                      <th className="sticky left-0 z-10 w-52 bg-white px-4 py-3 text-left text-[11px] font-extrabold uppercase text-zinc-500 shadow-[1px_0_0_rgba(212,212,216,0.75)] dark:bg-zinc-900 dark:text-zinc-400 dark:shadow-[1px_0_0_rgba(63,63,70,0.9)]">
-                        Empresa
-                      </th>
-                      <th className="w-36 border-l border-zinc-100 px-3 py-3 text-right text-[11px] font-extrabold uppercase text-zinc-500 dark:border-zinc-800 dark:text-zinc-400">
-                        Saldo 31/12/{Number(selectedYear) - 1}
-                      </th>
-                      {statement.columns.map((column) => (
-                        <th
-                          key={column.key}
-                          className={`w-32 border-l border-zinc-100 px-3 py-3 text-right text-[11px] font-extrabold uppercase dark:border-zinc-800 ${
-                            column.kind === "quarter"
-                              ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-300"
-                              : "text-blue-700 dark:text-blue-300"
-                          }`}
-                        >
-                          {column.label}
+              <div className="relative min-w-0">
+                <div
+                  className="max-w-full overflow-x-auto overscroll-x-contain pb-2 [scrollbar-gutter:stable] [-webkit-overflow-scrolling:touch]"
+                  aria-label="Tabela de rentabilidade"
+                >
+                  <table className="w-max min-w-full border-collapse text-sm">
+                    <thead>
+                      <tr className="border-b border-zinc-200 bg-white dark:border-zinc-700 dark:bg-zinc-900">
+                        <th className="sticky left-0 z-10 w-40 bg-white px-3 py-3 text-left text-[11px] font-extrabold uppercase text-zinc-500 shadow-[1px_0_0_rgba(212,212,216,0.75)] dark:bg-zinc-900 dark:text-zinc-400 dark:shadow-[1px_0_0_rgba(63,63,70,0.9)] sm:w-52 sm:px-4">
+                          Empresa
                         </th>
+                        <th className="w-36 border-l border-zinc-100 px-3 py-3 text-right text-[11px] font-extrabold uppercase text-zinc-500 dark:border-zinc-800 dark:text-zinc-400">
+                          Saldo 31/12/{Number(selectedYear) - 1}
+                        </th>
+                        {statement.columns.map((column) => (
+                          <th
+                            key={column.key}
+                            className={`w-32 border-l border-zinc-100 px-3 py-3 text-right text-[11px] font-extrabold uppercase dark:border-zinc-800 ${
+                              column.kind === "quarter"
+                                ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-300"
+                                : "text-blue-700 dark:text-blue-300"
+                            }`}
+                          >
+                            {column.label}
+                          </th>
+                        ))}
+                        <th className="w-36 border-l border-zinc-100 bg-amber-50 px-3 py-3 text-right text-[11px] font-extrabold uppercase text-amber-700 dark:border-zinc-800 dark:bg-amber-950/30 dark:text-amber-300">
+                          Saldo {lastDayLabel(selectedYear, rangeTo)}
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {statement.rows.map((row) => (
+                        <RentabilidadeTableRow
+                          key={row.companyId}
+                          row={row}
+                          columns={statement.columns}
+                          onMonthClick={setDetail}
+                        />
                       ))}
-                      <th className="w-36 border-l border-zinc-100 bg-amber-50 px-3 py-3 text-right text-[11px] font-extrabold uppercase text-amber-700 dark:border-zinc-800 dark:bg-amber-950/30 dark:text-amber-300">
-                        Saldo {lastDayLabel(selectedYear, rangeTo)}
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {statement.rows.map((row) => (
                       <RentabilidadeTableRow
-                        key={row.companyId}
-                        row={row}
+                        row={statement.totalRow}
                         columns={statement.columns}
                         onMonthClick={setDetail}
+                        total
                       />
-                    ))}
-                    <RentabilidadeTableRow
-                      row={statement.totalRow}
-                      columns={statement.columns}
-                      onMonthClick={setDetail}
-                      total
-                    />
-                  </tbody>
-                </table>
+                    </tbody>
+                  </table>
+                </div>
               </div>
             </section>
           </>
@@ -663,8 +668,8 @@ function RentabilidadeTableRow({
 
   return (
     <tr className={rowClass}>
-      <th className={`sticky left-0 z-10 px-4 py-3 text-left text-sm font-extrabold ${stickyClass}`}>
-        {row.companyName}
+      <th className={`sticky left-0 z-10 w-40 max-w-40 px-3 py-3 text-left text-sm font-extrabold sm:w-52 sm:max-w-52 sm:px-4 ${stickyClass}`}>
+        <span className="block truncate">{row.companyName}</span>
       </th>
       <MoneyCell value={row.openingBalance} total={total} muted />
       {columns.map((column) => {

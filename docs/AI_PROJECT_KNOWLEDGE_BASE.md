@@ -29,6 +29,7 @@ Entidades principais encontradas em `prisma/schema.prisma`:
 - `Group`: agrupador de empresas. Tambem e usado por patrimonio.
 - `Company`: empresa vinculada a um grupo, com documento opcional e status ativo/inativo.
 - `UserCompany`: relacao N:N entre usuario e empresa, usada para isolamento de acesso de clientes.
+- `CompanySetting`: configuracoes flexiveis por empresa, com chave unica por `companyId` e `key`.
 - `ImportBatch`: lote de importacao por empresa, mes de referencia, tipo de fonte, checksum e status.
 - `LedgerEntry`: lancamentos/linhas de balancete importadas.
 - `RazaoEntry`: linhas de razao contabil, com data, conta, centro de custo, historico, debito, credito e saldo.
@@ -57,6 +58,7 @@ Fluxos de dominio:
 - Mapeamentos podem ser semeados via `/api/admin/mappings/seed`.
 - Clientes acessam apenas empresas/grupos ligados por `UserCompany`.
 - Patrimonio e consultado por grupo/mes e criado/alterado por admin. Ativos devem pertencer a secoes configuraveis. O patrimonio pode ser copiado entre competencias do mesmo grupo quando o destino ainda nao possui dados.
+- Configuracoes administrativas por empresa ficam em `/app/admin/settings`; a primeira parametrizacao controla quais locatarios aparecem no dashboard.
 
 ---
 
@@ -177,6 +179,57 @@ Regras de merge evitam perda de campos de balanco quando razao nao inclui todas 
 
 Pontos de atencao:
 - Campos em `BALANCE_SHEET_FIELDS` precisam ser revisados ao criar novos indicadores patrimoniais.
+
+### Regra: Status de pagamento por locatario no Razao
+
+Descricao:
+Empresas com Razao e centro de custo podem exibir status mensal de pagamento por locatario quando o Razao possui o fluxo de contas a receber por locatario.
+
+Fluxo contabil esperado:
+- Provisao mensal: debito em Ativo / Contas a Receber do locatario e credito em Receita de aluguel/condominio/ADM.
+- Baixa por pagamento: debito em Banco/Caixa e credito na mesma conta a receber do locatario.
+- Em arquivos reais, contas a receber por locatario podem aparecer como `1.1.30.*` ou como `1.1.20.100.*` com centro de custo e nome do locatario na conta.
+- A receita de contrapartida pode estar no mesmo lote ou em lote separado, mas deve bater por competencia, data, centro de custo, valor e historico/nome do locatario.
+- A baixa pode ser identificada pelo credito na propria conta a receber do locatario mesmo quando a linha de banco nao aparece no detalhe do Razao; quando banco aparece agrupado, a soma dos debitos bancarios pode bater com a soma dos creditos em contas a receber do lote.
+
+Onde aparece:
+- `lib/dashboard/tenant-payments.ts`
+- `app/api/dashboard/tenants/route.ts`
+- `app/components/tenant-section.tsx`
+
+Impacto no codigo:
+A regra calcula status sem criar novas tabelas, usando `RazaoEntry` ja importado. Como `counterpartCode` armazena o codigo interno da contrapartida do arquivo, a identificacao nao depende dele isoladamente: os lancamentos sao pareados por mes/data/lote/valor, centro de custo e pela natureza da outra ponta contabil. Pagamentos sao alocados por FIFO nas provisoes abertas do mesmo locatario, respeitando centro de custo quando disponivel.
+
+Status calculados:
+- `PAID`: valor pago maior ou igual ao provisionado.
+- `OPEN`: nenhuma baixa alocada.
+- `PARTIAL`: baixa menor que o valor provisionado.
+
+Pontos de atencao:
+- Movimentos bancarios em conta a receber sem contrapartida de receita nao viram provisao.
+- Debitos em A/R que representam juros ou ajustes nao viram provisao de aluguel/condominio quando nao ha receita de aluguel/condominio/ADM correspondente.
+- O card de locatarios continua aceitando o fluxo antigo de receitas por historico, mas o bloco mensal `payment` so aparece quando ha provisao em contas a receber.
+- Historicos de aluguel/condominio tambem podem inferir locatarios dinamicamente, alem da lista conhecida hardcoded.
+
+### Regra: Parametrizacao de locatarios visiveis
+
+Descricao:
+Administradores podem escolher, por empresa, se o dashboard deve exibir todos os locatarios detectados ou somente uma lista selecionada. A configuracao fica em `CompanySetting` com a chave `dashboard.tenants.display`.
+
+Onde aparece:
+- `app/app/admin/settings/page.tsx`
+- `app/api/admin/settings/tenant-display/route.ts`
+- `lib/settings/company-settings.ts`
+- `app/api/dashboard/tenants/route.ts`
+
+Impacto no codigo:
+O endpoint `/api/dashboard/tenants` continua calculando todos os locatarios detectaveis, mas filtra a resposta final conforme a parametrizacao da empresa. Quando `mode = ALL`, todos os cards sao exibidos. Quando `mode = SELECTED`, apenas `visibleTenantKeys` aparecem. Admins podem consultar a rota com `includeHidden=true` para a tela de configuracoes listar todos os locatarios disponiveis.
+
+Pontos de atencao:
+- As chaves persistidas usam normalizacao sem acento/pontuacao por `tenantDisplayKey`.
+- A configuracao e por empresa, nao por usuario.
+- Novas parametrizacoes futuras devem reaproveitar `CompanySetting` quando forem simples chave/valor por empresa.
+- Alteracoes nessa configuracao registram auditoria com `AuditAction.SETTING_UPDATE`.
 
 ### Regra: Auditoria de acoes sensiveis
 

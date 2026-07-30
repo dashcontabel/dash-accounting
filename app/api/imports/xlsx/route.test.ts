@@ -87,4 +87,104 @@ describe("POST /api/imports/xlsx", () => {
     expect(body.batchId).toBe("b1");
     expect(body.summary).toEqual({ SD_BANCARIO: 100 });
   });
+
+  it("persists Razao detail entries used by tenant payment status", async () => {
+    const { getUserFromRequest } = await import("@/lib/auth");
+    const { isRazaoFormat, parseRazaoBuffer, applyAccountMappings } = await import("@/lib/xlsx");
+    const { prisma } = await import("@/lib/prisma");
+
+    const txRazaoCreateMany = vi.fn();
+
+    vi.mocked(getUserFromRequest).mockResolvedValue({ sub: "u1" } as never);
+    vi.mocked(prisma.user.findFirst).mockResolvedValue({ id: "u1", role: "ADMIN" } as never);
+    vi.mocked(isRazaoFormat).mockReturnValue(true);
+    vi.mocked(parseRazaoBuffer).mockReturnValue({
+      metadata: {
+        cnpj: null,
+        referenceMonth: "2026-01",
+        periodEndMonth: null,
+        hasCostCenters: true,
+        costCenters: ["Condominio"],
+      },
+      months: ["2026-01"],
+      byMonth: {
+        "2026-01": {
+          referenceMonth: "2026-01",
+          accountRows: [
+            {
+              accountCode: "1.1.20.100.1",
+              description: "AGIL ARQUITETURA",
+              values: { saldo_atual: 633, saldo_anterior: 0, debito: 633, credito: 0 },
+            },
+          ],
+          entries: [
+            {
+              entryDate: new Date("2026-01-10"),
+              referenceMonth: "2026-01",
+              accountCode: "1.1.20.100.1",
+              accountName: "AGIL ARQUITETURA",
+              costCenter: "Condominio",
+              lot: "2394",
+              counterpartCode: null,
+              counterpartName: null,
+              description: "PROVISAO AGIL ARQUITETURA 01/2026",
+              debit: 633,
+              credit: 0,
+              balance: 633,
+            },
+          ],
+        },
+      },
+    } as never);
+    vi.mocked(prisma.accountMapping.findMany).mockResolvedValue([] as never);
+    vi.mocked(prisma.importBatch.findUnique).mockResolvedValue(null as never);
+    vi.mocked(prisma.importBatch.findFirst).mockResolvedValue(null as never);
+    vi.mocked(prisma.importBatch.create).mockResolvedValue({ id: "b-razao" } as never);
+    vi.mocked(applyAccountMappings).mockReturnValue({
+      summary: {},
+      mappedAccountCodes: [],
+      unmappedAccounts: [],
+    } as never);
+    vi.mocked(prisma.$transaction).mockImplementation(async (callback: never) =>
+      callback({
+        ledgerEntry: { createMany: vi.fn() },
+        razaoEntry: { createMany: txRazaoCreateMany },
+        dashboardMonthlySummary: { findUnique: vi.fn().mockResolvedValue(null), upsert: vi.fn() },
+        unmappedAccount: { createMany: vi.fn() },
+        importBatch: { update: vi.fn().mockResolvedValue({}) },
+      }),
+    );
+
+    const formData = new FormData();
+    formData.append("companyId", "c1");
+    formData.append("file", new File(["dummy"], "razao.xlsx"));
+
+    const request = new NextRequest("http://localhost/api/imports/xlsx", {
+      method: "POST",
+      body: formData,
+    });
+
+    const response = await POST(request);
+    const body = await response.json();
+
+    expect(response.status).toBe(201);
+    expect(body.sourceType).toBe("RAZAO");
+    expect(txRazaoCreateMany).toHaveBeenCalledWith({
+      data: [
+        expect.objectContaining({
+          importBatchId: "b-razao",
+          companyId: "c1",
+          referenceMonth: "2026-01",
+          accountCode: "1.1.20.100.1",
+          accountName: "AGIL ARQUITETURA",
+          costCenter: "Condominio",
+          lot: "2394",
+          description: "PROVISAO AGIL ARQUITETURA 01/2026",
+          debit: 633,
+          credit: 0,
+          balance: 633,
+        }),
+      ],
+    });
+  });
 });

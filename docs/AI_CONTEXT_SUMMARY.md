@@ -6,6 +6,7 @@
 O fluxo central envolve balancete/razao em XLSX/XLS/CSV, parsing, validacao, persistencia e visualizacao gerencial.
 Admins gerenciam usuarios, empresas, grupos, mapeamentos, imports, auditoria e patrimonio.
 Clientes acessam somente empresas/grupos vinculados.
+Ha tambem a rota `/app/rentabilidade`, que mostra um demonstrativo multiempresa de rentabilidade liquida, rendimento bruto, IOF/IRRF e saldos bancarios usando os resumos mensais ja autorizados.
 
 ---
 
@@ -25,7 +26,7 @@ Clientes acessam somente empresas/grupos vinculados.
 
 Principais entidades:
 
-- `User`, `Group`, `Company`, `UserCompany`.
+- `User`, `Group`, `Company`, `UserCompany`, `CompanySetting`.
 - `ImportBatch`, `LedgerEntry`, `RazaoEntry`, `UnmappedAccount`.
 - `AccountMapping`, `DashboardMonthlySummary`.
 - `AuditLog`, `SystemConfig`, `PatrimonioAsset`.
@@ -37,6 +38,8 @@ Conceitos criticos:
 - `sourceType`: `XLSX`, `RAZAO`, `XLSX_CONSOLIDATED`.
 - Mapeamentos por `EXACT`, `PREFIX`, `LIST`, `SUM`, `ABS_SUM` e formulas calculadas.
 - Isolamento de dados por empresa/grupo.
+- Rentabilidade: `/app/rentabilidade` monta visao de demonstrativo com empresas nas linhas, saldo de 31/12 do ano anterior, rentabilidade liquida mes a mes, totais trimestrais e saldo final do periodo. A composicao por clique usa os campos `RENDIMENTO_BRUTO`, `IOF_IRRF`, `RENTABILIDADE` e `SD_BANCARIO` do `DashboardMonthlySummary`.
+- Locatarios: `/api/dashboard/tenants` calcula recebido por historico e, quando o Razao tem contas a receber por locatario, calcula `payment` mensal com provisionado, pago, saldo em aberto e status (`PAID`, `OPEN`, `PARTIAL`). A exibicao dos cards respeita `CompanySetting` com a chave `dashboard.tenants.display`.
 
 ---
 
@@ -58,6 +61,8 @@ Route handlers retornam JSON e usam Zod/helpers para validacao e autorizacao.
 - Importacao deve validar arquivo, tamanho, extensao, CNPJ/periodo quando disponivel, permissao e idempotencia por checksum.
 - Nova importacao concluida do mesmo `sourceType`, empresa e mes deve evitar sobrescrita acidental.
 - Mapeamentos contabeis afetam dashboard e devem ter testes.
+- Status mensal de pagamento de locatarios e calculado de `RazaoEntry` por pareamento de competencia/data/lote/valor/centro de custo: provisao e debito em contas a receber (`1.1.30.*` ou `1.1.20.100.*`) contra receita de aluguel/condominio/ADM; baixa e credito na propria conta a receber, com banco/caixa como confirmacao quando presente.
+- Parametrizacoes por empresa ficam em `CompanySetting`; a primeira chave usada e `dashboard.tenants.display`, com modo `ALL` ou `SELECTED` e lista de chaves de locatarios visiveis.
 - Mudancas de schema exigem migration Prisma e revisao de impacto.
 - Nao expor `.env`, `JWT_SECRET`, hashes ou dados sensiveis.
 - Acoes administrativas relevantes devem registrar auditoria.

@@ -3,118 +3,36 @@ import { z } from "zod";
 
 import { getUserFromRequest } from "@/lib/auth";
 import { assertCompanyAccess } from "@/lib/company-access";
+import {
+  matchTenant,
+  normalizeTenantKey,
+  resolveTenantFromDescription,
+  tenantDisplayKey,
+} from "@/lib/dashboard/tenant-identification";
+import {
+  buildTenantPaymentSummary,
+  resolveTenantPaymentStatus,
+  type TenantPaymentMonthStatus,
+  type TenantPaymentStatus,
+} from "@/lib/dashboard/tenant-payments";
 import { prisma } from "@/lib/prisma";
+import {
+  getTenantDisplaySettings,
+  shouldDisplayTenant,
+} from "@/lib/settings/company-settings";
 
 export const runtime = "nodejs";
-
-/**
- * Hardcoded list of canonical tenant names.
- * Matching is accent- and case-insensitive substring search.
- * Will be moved to DB config in a future iteration.
- */
-const KNOWN_TENANTS = [
-  "Barbara",
-  "Magna (Reuse)",
-  "Daniela",
-  "Silvia",
-  "Evelyn/Ivson",
-  "Gabriel",
-  "Thais",
-  "Pedro",
-  "Cleyde/Carlos",
-] as const;
-
-// Alternative spellings/forms found in source descriptions.
-const TENANT_ALIASES: Record<string, string[]> = {
-  "Magna (Reuse)": ["Magna", "Magna Reuse", "Magna (Reuse)"],
-  "Evelyn/Ivson": ["Evelyn/Ivson", "Evelyn / Ivson", "Evelyn", "Ivson"],
-  "Cleyde/Carlos": ["Cleyde/Carlos", "Cleyde / Carlos", "Cleyde", "Carlos"],
-};
-
-function normalize(s: string) {
-  return s
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .toLowerCase();
-}
-
-function normalizeLoose(s: string) {
-  return normalize(s).replace(/[^a-z0-9]/g, "");
-}
-
-/** Returns the canonical tenant label if description mentions a known tenant; null otherwise. */
-function matchTenant(description: string): string | null {
-  const norm = normalize(description);
-  const looseNorm = normalizeLoose(description);
-  for (const tenant of KNOWN_TENANTS) {
-    const aliases = TENANT_ALIASES[tenant] ?? [tenant];
-    for (const alias of aliases) {
-      const aliasNorm = normalize(alias);
-      const aliasLoose = normalizeLoose(alias);
-      if (norm.includes(aliasNorm) || looseNorm.includes(aliasLoose)) {
-        return tenant;
-      }
-    }
-  }
-  return null;
-}
-
-// Words that are never a valid surname in a description
-const SKIP_SURNAME_WORDS = new Set([
-  "de", "da", "do", "das", "dos", "e", "em", "na", "no", "a", "o",
-]);
-
-/**
- * Extracts "FIRST LAST" from a raw description, finding the tenant first-name
- * word and taking the immediately following word as the surname.
- * Example: "VR REF A ADIANAMENTO PEDRO MAIA" + "Pedro" → "PEDRO MAIA"
- *
- * Skips the surname candidate when it:
- *   - contains a slash or hyphen (e.g. "JOÃO/EVELYN" split artifact)
- *   - is a preposition (de, da, do …)
- *   - matches another known tenant first name
- */
-function extractDisplayName(description: string, canonicalFirst: string): string {
-  // For combined labels, keep canonical formatting exactly as configured.
-  if (canonicalFirst.includes("/") || canonicalFirst.includes("(")) {
-    return canonicalFirst;
-  }
-
-  const words = description.trim().split(/\s+/);
-  const normFirst = normalize(canonicalFirst);
-  const knownNorms = (KNOWN_TENANTS as readonly string[]).map(normalize);
-
-  for (let i = 0; i < words.length; i++) {
-    const word = words[i]!;
-    // Clean the matched word itself (handle "JOÃO/EVELYN" → "JOÃO")
-    const cleanedFirst = word.split(/[\/\-]/)[0]!.trim();
-    if (!normalize(cleanedFirst).includes(normFirst)) continue;
-
-    // Evaluate the next word as a potential surname
-    let surname = "";
-    if (i + 1 < words.length) {
-      const next = words[i + 1]!;
-      const normNext = normalize(next);
-      const isAlphaOnly = /^[\p{L}]+$/u.test(next);         // letters only (no /\-0-9)
-      const isPrep = SKIP_SURNAME_WORDS.has(normNext);       // de, da, do …
-      const isKnownFirst = knownNorms.some((k) => normNext.includes(k)); // João, Pedro …
-
-      if (isAlphaOnly && !isPrep && !isKnownFirst) surname = next;
-    }
-
-    const parts = surname ? [cleanedFirst, surname] : [cleanedFirst];
-    return parts.join(" ").toUpperCase();
-  }
-  return canonicalFirst.toUpperCase();
-}
 
 const querySchema = z.object({
   companyId: z.string().min(1),
   year: z.string().regex(/^\d{4}$/),
+  includeHidden: z.boolean().default(false),
 });
 
 export type TenantItem = {
-  /** Tenant name (from RazaoEntry.description) */
+  /** Stable key used by tenant display parametrization */
+  key: string;
+  /** Tenant name (from RazaoEntry.description or tenant receivable account) */
   description: string;
   /** Credit total per cost center name */
   byCostCenter: Record<string, number>;
@@ -128,35 +46,111 @@ export type TenantItem = {
   annualForecast: number;
   /** annualForecast - totalCredit (positive = still to receive) */
   balance: number;
+  /** Monthly receivable provision/payment status, when the Razao has tenant A/R accounts */
+  payment?: {
+    provisioned: number;
+    paid: number;
+    openBalance: number;
+    status: TenantPaymentStatus;
+    monthly: TenantPaymentMonthStatus[];
+  };
 };
 
 export type TenantSummaryResponse = {
   hasTenantData: boolean;
+  hasTenantPaymentData: boolean;
   year: string;
   companyId: string;
   /** Number of distinct months in the year that have any RazaoEntry data */
   totalMonths: number;
-  /** All unique cost-center names found across tenant entries */
+  /** All unique cost-center names found across visible tenant entries */
   costCenters: string[];
+  /** Cost centers with visible tenant payment statuses */
+  paymentCostCenters: string[];
+  /** Competencies with visible tenant payment statuses */
+  paymentCompetencies: string[];
   items: TenantItem[];
 };
+
+type RawTenantEntry = {
+  referenceMonth: string;
+  entryDate: Date;
+  accountCode: string;
+  accountName: string;
+  costCenter: string | null;
+  lot: string | null;
+  description: string | null;
+  debit: unknown;
+  credit: unknown;
+};
+
+function roundMoney(value: number) {
+  return Number(value.toFixed(2));
+}
+
+function summarizePayment(monthly: TenantPaymentMonthStatus[]) {
+  const provisioned = roundMoney(monthly.reduce((sum, item) => sum + item.provisioned, 0));
+  const paid = roundMoney(monthly.reduce((sum, item) => sum + item.paid, 0));
+  const openBalance = roundMoney(monthly.reduce((sum, item) => sum + item.openBalance, 0));
+
+  return {
+    provisioned,
+    paid,
+    openBalance,
+    status: resolveTenantPaymentStatus(provisioned, paid),
+    monthly,
+  };
+}
+
+function itemInternalKey(item: Pick<TenantItem, "description" | "key">) {
+  return matchTenant(item.description) ?? item.key;
+}
+
+function collectCostCenters(items: TenantItem[]) {
+  const costCenters = new Set<string>();
+
+  for (const item of items) {
+    for (const costCenter of Object.keys(item.byCostCenter)) {
+      costCenters.add(costCenter);
+    }
+    for (const month of item.payment?.monthly ?? []) {
+      if (month.costCenter) costCenters.add(month.costCenter);
+    }
+  }
+
+  return [...costCenters].sort((a, b) => a.localeCompare(b, "pt-BR"));
+}
+
+function collectPaymentCostCenters(items: TenantItem[]) {
+  const costCenters = new Set<string>();
+
+  for (const item of items) {
+    for (const month of item.payment?.monthly ?? []) {
+      if (month.costCenter) costCenters.add(month.costCenter);
+    }
+  }
+
+  return [...costCenters].sort((a, b) => a.localeCompare(b, "pt-BR"));
+}
+
+function collectPaymentCompetencies(items: TenantItem[]) {
+  const competencies = new Set<string>();
+
+  for (const item of items) {
+    for (const month of item.payment?.monthly ?? []) {
+      competencies.add(month.referenceMonth);
+    }
+  }
+
+  return [...competencies].sort();
+}
 
 /**
  * GET /api/dashboard/tenants
  *
- * Returns credit totals grouped by tenant (RazaoEntry.description) and cost
- * center for a company across the full selected year.
- *
- * Only entries with both description AND costCenter populated, and where
- * credit > 0, are considered. This captures receivable-side movements
- * (rents, condo fees, admin fees) that are typically tagged with a locatário
- * description and a cost-center such as "Condomínio" or "Placa - ADM".
- *
- * The annualForecast is extrapolated as: (totalCredit / totalMonths) × 12
- *
- * Query params:
- *   companyId – required
- *   year      – required, "YYYY"
+ * Returns tenant cards for a company/year. By default the response respects
+ * the per-company display parametrization. Admins can pass includeHidden=true
+ * so the settings screen can list every detected tenant.
  */
 export async function GET(request: NextRequest) {
   const session = await getUserFromRequest(request);
@@ -175,105 +169,155 @@ export async function GET(request: NextRequest) {
   const parsed = querySchema.safeParse({
     companyId: request.nextUrl.searchParams.get("companyId") ?? "",
     year: request.nextUrl.searchParams.get("year") ?? "",
+    includeHidden: request.nextUrl.searchParams.get("includeHidden") === "true",
   });
 
   if (!parsed.success) {
     return NextResponse.json({ error: "Parametros invalidos." }, { status: 400 });
   }
 
-  const { companyId, year } = parsed.data;
+  const { companyId, year, includeHidden } = parsed.data;
 
   try {
     await assertCompanyAccess(user, companyId);
 
-    // Quick check: does any entry exist with description + costCenter + credit > 0?
-    const anyEntry = await prisma.razaoEntry.findFirst({
+    const entries = await prisma.razaoEntry.findMany({
       where: {
         companyId,
         referenceMonth: { startsWith: year },
-        description: { not: null },
-        costCenter: { not: null },
-        credit: { gt: 0 },
       },
-      select: { id: true },
+      select: {
+        referenceMonth: true,
+        entryDate: true,
+        accountCode: true,
+        accountName: true,
+        costCenter: true,
+        lot: true,
+        description: true,
+        debit: true,
+        credit: true,
+      },
     });
 
-    if (!anyEntry) {
+    if (entries.length === 0) {
       return NextResponse.json<TenantSummaryResponse>({
         hasTenantData: false,
+        hasTenantPaymentData: false,
         year,
         companyId,
         totalMonths: 0,
         costCenters: [],
+        paymentCostCenters: [],
+        paymentCompetencies: [],
         items: [],
       });
     }
 
-    // Count distinct reference months to use for extrapolation
-    const monthRows = await prisma.razaoEntry.findMany({
-      where: { companyId, referenceMonth: { startsWith: year } },
-      select: { referenceMonth: true },
-      distinct: ["referenceMonth"],
-    });
-    const totalMonths = monthRows.length;
-
-    // Group by description + costCenter, summing credits
-    const grouped = await prisma.razaoEntry.groupBy({
-      by: ["description", "costCenter"],
-      where: {
-        companyId,
-        referenceMonth: { startsWith: year },
-        description: { not: null },
-        costCenter: { not: null },
-        credit: { gt: 0 },
-      },
-      _sum: { credit: true },
-    });
-
-    // Aggregate per known tenant (merge all descriptions that match the same canonical name)
+    const totalMonths = new Set(entries.map((entry) => entry.referenceMonth)).size;
     const byTenant = new Map<string, Record<string, number>>();
-    const tenantDisplayNames = new Map<string, string>(); // canonical key → "NOME SOBRENOME"
-    for (const g of grouped) {
-      if (!g.description || !g.costCenter) continue;
-      const tenantKey = matchTenant(g.description);
-      if (!tenantKey) continue; // skip entries that don't belong to any known tenant
-      // Capture display name from the first description seen for this tenant
-      if (!tenantDisplayNames.has(tenantKey)) {
-        tenantDisplayNames.set(tenantKey, extractDisplayName(g.description, tenantKey));
+    const tenantDisplayNames = new Map<string, string>();
+
+    for (const entry of entries) {
+      if (!entry.description || !entry.costCenter || Number(entry.credit) <= 0) continue;
+      const tenant = resolveTenantFromDescription(entry.description);
+      if (!tenant) continue;
+
+      if (!tenantDisplayNames.has(tenant.key)) {
+        tenantDisplayNames.set(tenant.key, tenant.displayName);
       }
-      if (!byTenant.has(tenantKey)) byTenant.set(tenantKey, {});
-      const cc = byTenant.get(tenantKey)!;
-      cc[g.costCenter] = (cc[g.costCenter] ?? 0) + Number(g._sum.credit ?? 0);
+
+      const cc = byTenant.get(tenant.key) ?? {};
+      cc[entry.costCenter] = (cc[entry.costCenter] ?? 0) + Number(entry.credit);
+      byTenant.set(tenant.key, cc);
     }
 
-    // Build items with forecast and balance
-    // (also collect cost centers only from matched entries)
-    const ccSet = new Set<string>();
     const items: TenantItem[] = [];
     for (const [tenantKey, byCostCenter] of byTenant) {
-      const totalCredit = Object.values(byCostCenter).reduce((s, v) => s + v, 0);
+      const totalCredit = Object.values(byCostCenter).reduce((sum, value) => sum + value, 0);
       const annualForecast = totalMonths > 0 ? (totalCredit / totalMonths) * 12 : totalCredit;
       const balance = annualForecast - totalCredit;
-      for (const cc of Object.keys(byCostCenter)) ccSet.add(cc);
       const description = tenantDisplayNames.get(tenantKey) ?? tenantKey.toUpperCase();
-      items.push({ description, byCostCenter, totalCredit, annualForecast, balance });
+
+      items.push({
+        key: tenantDisplayKey(description),
+        description,
+        byCostCenter,
+        totalCredit,
+        annualForecast,
+        balance,
+      });
     }
 
-    const costCenters = [...ccSet].sort((a, b) => a.localeCompare(b, "pt-BR"));
+    const paymentSummary = buildTenantPaymentSummary(entries as RawTenantEntry[]);
+    const paymentByTenant = new Map<string, TenantPaymentMonthStatus[]>();
+    const paymentDisplayNames = new Map<string, string>();
 
-    // Sort by totalCredit descending
-    items.sort((a, b) => b.totalCredit - a.totalCredit);
+    for (const paymentItem of paymentSummary.items) {
+      const tenantKey = matchTenant(paymentItem.tenantName) ?? paymentItem.tenantKey;
+      const current = paymentByTenant.get(tenantKey) ?? [];
+      current.push(paymentItem);
+      paymentByTenant.set(tenantKey, current);
+
+      if (!paymentDisplayNames.has(tenantKey)) {
+        paymentDisplayNames.set(tenantKey, paymentItem.tenantName.toUpperCase());
+      }
+    }
+
+    for (const [tenantKey, monthly] of paymentByTenant) {
+      const description = paymentDisplayNames.get(tenantKey) ?? tenantKey.toUpperCase();
+      const paymentDisplayKey = tenantDisplayKey(description);
+      const payment = summarizePayment(monthly);
+      const item = items.find((candidate) => {
+        return (
+          itemInternalKey(candidate) === tenantKey ||
+          candidate.key === paymentDisplayKey ||
+          normalizeTenantKey(candidate.description) === normalizeTenantKey(tenantKey)
+        );
+      });
+
+      if (item) {
+        item.key = paymentDisplayKey;
+        item.description = description;
+        item.payment = payment;
+        continue;
+      }
+
+      items.push({
+        key: paymentDisplayKey,
+        description,
+        byCostCenter: {},
+        totalCredit: payment.paid,
+        annualForecast: payment.provisioned,
+        balance: payment.openBalance,
+        payment,
+      });
+    }
+
+    items.sort((a, b) => {
+      const totalA = a.payment?.paid ?? a.totalCredit;
+      const totalB = b.payment?.paid ?? b.totalCredit;
+      return totalB - totalA;
+    });
+
+    const settings = await getTenantDisplaySettings(companyId);
+    const canIncludeHidden = includeHidden && user.role === "ADMIN";
+    const visibleItems = canIncludeHidden
+      ? items
+      : items.filter((item) => shouldDisplayTenant(item.key, settings));
 
     return NextResponse.json<TenantSummaryResponse>({
-      hasTenantData: items.length > 0,
+      hasTenantData: visibleItems.length > 0,
+      hasTenantPaymentData: visibleItems.some((item) => Boolean(item.payment)),
       year,
       companyId,
       totalMonths,
-      costCenters,
-      items,
+      costCenters: collectCostCenters(visibleItems),
+      paymentCostCenters: collectPaymentCostCenters(visibleItems),
+      paymentCompetencies: collectPaymentCompetencies(visibleItems),
+      items: visibleItems,
     });
   } catch (err) {
-    if (err instanceof Error && err.message === "Forbidden") {
+    if (err instanceof Error && (err.message === "Forbidden" || err.message === "COMPANY_ACCESS_DENIED")) {
       return NextResponse.json({ error: "Acesso negado." }, { status: 403 });
     }
     console.error("[tenants] erro:", err);

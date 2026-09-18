@@ -265,18 +265,18 @@ describe("Home dashboard", () => {
       ALUGUEL: 0,
       LRA2_INVEST: 0, LRA3_INVEST: 0, B_VISTA_INVEST: 0, TRAPICHE_INVEST: 0,
       IMPOSTOS: 5,
-      IOF_IRRF: 0,
+      IOF_IRRF: 20,
       LRA2_DESP: 0, LRA3_DESP: 0, B_VISTA_DESP: 0, TRAPICHE_DESP: 0,
       CONDOMINIO: 0,
       DISTRIB_LUCROS: 0,
       DEMAIS_DESPESAS: 5,
       PRO_LABORES: 0,
       SD_BANCARIO: 1000,
-      RENTABILIDADE: 10,
+      RENTABILIDADE: -10,
       ALUGUEL_LIQUIDO: 0,
       RECEITAS_TOTAL: 110,
-      DESPESAS_TOTAL: 10,
-      RESULTADO: 100,
+      DESPESAS_TOTAL: 30,
+      RESULTADO: 80,
     };
 
     const companies = [
@@ -357,6 +357,15 @@ describe("Home dashboard", () => {
     expect(within(screen.getByLabelText("Contexto da visualização")).getByText("Consolidado")).toBeInTheDocument();
     expect(await screen.findByLabelText("Saldos Bancários por Conta: total"))
       .toHaveTextContent("R$ 2.000,00");
+    const negativeNetYieldCard = screen.getByText("Rend. Líquidos").closest("article");
+    expect(negativeNetYieldCard).toHaveClass("border-red-200/80");
+    const negativeNetYieldValue = negativeNetYieldCard?.querySelector("p[title]");
+    expect(negativeNetYieldValue).toHaveClass("text-red-700");
+    expect(negativeNetYieldValue).toHaveTextContent(/-R\$\s*20,00/);
+    expect(negativeNetYieldCard?.querySelector('[data-kpi-icon="true"]'))
+      .toHaveClass("text-red-600");
+    expect(negativeNetYieldCard?.querySelector('[data-kpi-icon="true"] path'))
+      .toHaveAttribute("d", "M13 17h8m0 0V9m0 8-8-8-4 4-6-6");
 
     const alphaTag = screen.getByRole("button", { name: "Remover Empresa Alfa da consolidação" });
     const betaTag = screen.getByRole("button", { name: "Remover Empresa Beta da consolidação" });

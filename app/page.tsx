@@ -262,7 +262,7 @@ function KpiCard({
       <div className="relative z-10 flex items-start justify-between gap-3">
         <p className="min-w-0 text-sm font-semibold uppercase leading-snug tracking-[0.08em] text-zinc-600 dark:text-zinc-300">{label}</p>
         {icon && (
-          <span className={`relative flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ring-1 ring-inset ring-black/5 dark:ring-white/10 ${c.icon}`}>
+          <span data-kpi-icon="true" className={`relative flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ring-1 ring-inset ring-black/5 dark:ring-white/10 ${c.icon}`}>
             {icon}
             {interactive && (
               <>
@@ -311,6 +311,11 @@ const Icons = {
   trending: (
     <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
       <path strokeLinecap="round" strokeLinejoin="round" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
+    </svg>
+  ),
+  trendingDown: (
+    <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" d="M13 17h8m0 0V9m0 8-8-8-4 4-6-6" />
     </svg>
   ),
   invoice: (
@@ -1326,8 +1331,13 @@ export default function Home() {
                 <KpiCard label="Rec. Passivas" value={get(d, "RENDIMENTO_BRUTO")} color="teal"
                   sub="Rendimentos de aplicações" icon={Icons.chart}
                   onDrillDown={canDrillDown && mappingCodes["RENDIMENTO_BRUTO"]?.[0] ? () => setDrillDown({ accountCode: mappingCodes["RENDIMENTO_BRUTO"][0]!, label: "Receitas Passivas" }) : undefined} />
-                <KpiCard label="Rend. Líquidos" value={get(d, "RENTABILIDADE")} color="teal"
-                  sub="Rendimentos menos IOF/IRRF" icon={Icons.trending} />
+                <KpiCard
+                  label="Rend. Líquidos"
+                  value={get(d, "RENTABILIDADE")}
+                  color={get(d, "RENTABILIDADE") < 0 ? "red" : "teal"}
+                  sub="Rendimentos menos IOF/IRRF"
+                  icon={get(d, "RENTABILIDADE") < 0 ? Icons.trendingDown : Icons.trending}
+                />
               </div>
             </DashboardDivision>
 

@@ -52,10 +52,10 @@ describe("RentabilidadePage", () => {
                     {
                       referenceMonth: "2026-01",
                       dataJson: {
-                        SD_BANCARIO: 1085,
+                        SD_BANCARIO: 985,
                         RENDIMENTO_BRUTO: 100,
-                        IOF_IRRF: 15,
-                        RENTABILIDADE: 85,
+                        IOF_IRRF: 115,
+                        RENTABILIDADE: -15,
                       },
                     },
                   ],
@@ -77,7 +77,7 @@ describe("RentabilidadePage", () => {
                       accountCode: "3.2.2.05.004",
                       accountName: "IRRF sobre rendimentos",
                       months: {
-                        "2026-01": { grossYield: 0, taxWithheld: 15, netYield: -15 },
+                        "2026-01": { grossYield: 0, taxWithheld: 115, netYield: -115 },
                       },
                     },
                     {
@@ -110,8 +110,23 @@ describe("RentabilidadePage", () => {
     expect(taxRow).not.toBeNull();
     expect(within(incomeRow!).getByText("Rendimentos de aplicacoes")).toBeInTheDocument();
     expect(within(incomeRow!).getAllByText("R$ 100,00")).not.toHaveLength(0);
-    expect(within(taxRow!).getAllByText("-R$ 15,00")).not.toHaveLength(0);
+    expect(within(taxRow!).getAllByText("-R$ 115,00")).not.toHaveLength(0);
     expect(screen.getByText("Total da empresa")).toBeInTheDocument();
     expect(screen.queryByText("Total consolidado")).not.toBeInTheDocument();
+
+    const netYieldCard = screen.getByText("Rentab. liquida").closest("article");
+    expect(netYieldCard).toHaveAttribute("data-summary-tone", "red");
+    expect(netYieldCard).toHaveClass("relative", "min-h-[9.5rem]", "overflow-hidden", "shadow-sm");
+    expect(netYieldCard?.querySelector("p[title]")).toHaveTextContent(/-R\$\s*15,00/);
+    expect(netYieldCard?.querySelector("p[title]")).toHaveClass("text-red-700", "tabular-nums");
+    expect(netYieldCard?.querySelector('[data-summary-icon="true"]')).toHaveClass("text-red-600");
+    expect(netYieldCard?.querySelector('[data-summary-icon="true"] path'))
+      .toHaveAttribute("d", "M13 17h8m0 0V9m0 8-8-8-4 4-6-6");
+    expect(within(netYieldCard!).getByText("Resultado liquido negativo")).toBeInTheDocument();
+
+    for (const label of ["Rendimento bruto", "IOF / IRRF", "Saldo final"]) {
+      expect(screen.getByText(label).closest("article"))
+        .toHaveClass("relative", "min-h-[9.5rem]", "overflow-hidden", "shadow-sm");
+    }
   });
 });

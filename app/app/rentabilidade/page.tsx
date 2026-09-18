@@ -49,13 +49,6 @@ function valueTone(value: number | null | undefined): string {
   return "text-zinc-500 dark:text-zinc-400";
 }
 
-function shortValue(value: number | null | undefined): string {
-  if (value === null || value === undefined) return "-";
-  if (Math.abs(value) >= 1_000_000) return `R$ ${(value / 1_000_000).toFixed(1)}M`;
-  if (Math.abs(value) >= 1_000) return `R$ ${(value / 1_000).toFixed(0)}k`;
-  return formatCurrency(value);
-}
-
 function getMonthLabel(referenceMonth: string): string {
   const [year, month] = referenceMonth.split("-");
   const monthLabel = RENTABILIDADE_MONTH_LABELS[(month ?? "01") as RentabilidadeMonth] ?? month;
@@ -72,30 +65,92 @@ function SummaryCard({
   value,
   tone,
   icon,
+  sub,
 }: {
   label: string;
   value: number | null | undefined;
-  tone: "blue" | "green" | "red" | "amber";
+  tone: "blue" | "green" | "teal" | "red" | "amber";
   icon: React.ReactNode;
+  sub: string;
 }) {
   const styles = {
-    blue: "border-blue-100 bg-blue-50 text-blue-700 dark:border-blue-900/50 dark:bg-blue-950/30 dark:text-blue-300",
-    green: "border-emerald-100 bg-emerald-50 text-emerald-700 dark:border-emerald-900/50 dark:bg-emerald-950/30 dark:text-emerald-300",
-    red: "border-red-100 bg-red-50 text-red-700 dark:border-red-900/50 dark:bg-red-950/30 dark:text-red-300",
-    amber: "border-amber-100 bg-amber-50 text-amber-700 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-300",
-  };
+    blue: {
+      card: "border-blue-200/80 bg-white/95 dark:border-blue-900/60 dark:bg-zinc-900/90",
+      value: "text-blue-700 dark:text-blue-300",
+      icon: "bg-blue-50 text-blue-600 dark:bg-blue-950/70 dark:text-blue-400",
+      accent: "from-blue-600 via-blue-500 to-cyan-400",
+      glow: "bg-blue-400/15 dark:bg-blue-500/10",
+      dot: "bg-blue-500",
+    },
+    green: {
+      card: "border-emerald-200/80 bg-white/95 dark:border-emerald-900/60 dark:bg-zinc-900/90",
+      value: "text-emerald-700 dark:text-emerald-300",
+      icon: "bg-emerald-50 text-emerald-600 dark:bg-emerald-950/70 dark:text-emerald-400",
+      accent: "from-emerald-600 via-emerald-500 to-lime-400",
+      glow: "bg-emerald-400/15 dark:bg-emerald-500/10",
+      dot: "bg-emerald-500",
+    },
+    teal: {
+      card: "border-teal-200/80 bg-white/95 dark:border-teal-900/60 dark:bg-zinc-900/90",
+      value: "text-teal-700 dark:text-teal-300",
+      icon: "bg-teal-50 text-teal-600 dark:bg-teal-950/70 dark:text-teal-400",
+      accent: "from-teal-600 via-teal-500 to-cyan-400",
+      glow: "bg-teal-400/15 dark:bg-teal-500/10",
+      dot: "bg-teal-500",
+    },
+    red: {
+      card: "border-red-200/80 bg-white/95 dark:border-red-900/60 dark:bg-zinc-900/90",
+      value: "text-red-700 dark:text-red-300",
+      icon: "bg-red-50 text-red-600 dark:bg-red-950/70 dark:text-red-400",
+      accent: "from-red-600 via-red-500 to-orange-400",
+      glow: "bg-red-400/15 dark:bg-red-500/10",
+      dot: "bg-red-500",
+    },
+    amber: {
+      card: "border-amber-200/80 bg-white/95 dark:border-amber-900/60 dark:bg-zinc-900/90",
+      value: "text-amber-700 dark:text-amber-300",
+      icon: "bg-amber-50 text-amber-600 dark:bg-amber-950/70 dark:text-amber-400",
+      accent: "from-amber-600 via-amber-500 to-yellow-400",
+      glow: "bg-amber-400/15 dark:bg-amber-500/10",
+      dot: "bg-amber-500",
+    },
+  } as const;
+  const resolvedTone = value !== null && value !== undefined && value < 0 ? "red" : tone;
+  const cardStyles = styles[resolvedTone];
+  const formattedValue = formatCurrency(value);
 
   return (
-    <article className={`rounded-xl border p-4 ${styles[tone]}`}>
-      <div className="mb-2 flex items-center justify-between gap-2">
-        <p className="min-w-0 text-[11px] font-bold uppercase text-zinc-500 dark:text-zinc-400">
+    <article
+      data-summary-tone={resolvedTone}
+      className={`group relative flex min-h-[9.5rem] min-w-0 flex-col overflow-hidden rounded-xl border p-5 shadow-sm backdrop-blur-sm transition-all duration-200 xl:p-4 2xl:p-5 ${cardStyles.card}`}
+    >
+      <span aria-hidden="true" className={`absolute inset-x-0 top-0 h-1 bg-gradient-to-r ${cardStyles.accent}`} />
+      <span aria-hidden="true" className={`absolute -right-8 -top-8 h-24 w-24 rounded-full blur-2xl ${cardStyles.glow}`} />
+
+      <div className="relative z-10 flex items-start justify-between gap-3">
+        <p className="min-w-0 text-sm font-semibold uppercase leading-snug tracking-[0.08em] text-zinc-600 dark:text-zinc-300">
           {label}
         </p>
-        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-white/70 dark:bg-zinc-900/40">
+        <span
+          data-summary-icon="true"
+          className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ring-1 ring-inset ring-black/5 dark:ring-white/10 ${cardStyles.icon}`}
+        >
           {icon}
         </span>
       </div>
-      <p className="truncate text-lg font-extrabold tabular-nums">{shortValue(value)}</p>
+
+      <div className="relative z-10 mt-auto pt-6">
+        <p
+          title={formattedValue}
+          className={`min-w-0 truncate text-2xl font-extrabold leading-none tracking-tight tabular-nums sm:text-3xl xl:text-xl 2xl:text-2xl ${cardStyles.value}`}
+        >
+          {formattedValue}
+        </p>
+        <div className="mt-4 flex items-center gap-2 border-t border-zinc-200/80 pt-3 dark:border-zinc-800">
+          <span aria-hidden="true" className={`h-1.5 w-1.5 shrink-0 rounded-full ${cardStyles.dot}`} />
+          <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400">{sub}</p>
+        </div>
+      </div>
     </article>
   );
 }
@@ -164,11 +219,13 @@ function DetailMetric({
   highlight?: boolean;
   negative?: boolean;
 }) {
-  const color = highlight
-    ? "text-[#0f4c81] dark:text-blue-300"
-    : negative
-      ? "text-red-600 dark:text-red-400"
-      : "text-zinc-800 dark:text-zinc-100";
+  const color = value !== null && value < 0
+    ? "text-red-600 dark:text-red-400"
+    : highlight
+      ? "text-[#0f4c81] dark:text-blue-300"
+      : negative
+        ? "text-red-600 dark:text-red-400"
+        : "text-zinc-800 dark:text-zinc-100";
 
   return (
     <div className="rounded-xl border border-zinc-100 bg-zinc-50 px-4 py-3 dark:border-zinc-800 dark:bg-zinc-800/60">
@@ -440,6 +497,7 @@ export default function RentabilidadePage() {
     companiesData.every((company) => company.summaries.length === 0);
 
   const totalRow = statement?.totalRow;
+  const hasNegativeNetYield = (totalRow?.accumulatedNetYield ?? 0) < 0;
   const allSelected = allowedCompanies.length > 0 && selectedCompanyIds.length === allowedCompanies.length;
   const accountsByCompany = useMemo(
     () => new Map(accountCompanies.map((company) => [company.companyId, company.accounts])),
@@ -595,14 +653,21 @@ export default function RentabilidadePage() {
 
         {!isLoading && statement && statement.rows.length > 0 && !hasNoData && (
           <>
-            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
               <SummaryCard
                 label="Rentab. liquida"
                 value={totalRow?.accumulatedNetYield}
-                tone="green"
+                tone="teal"
+                sub={hasNegativeNetYield ? "Resultado liquido negativo" : "Rendimentos apos IOF/IRRF"}
                 icon={
                   <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      d={hasNegativeNetYield
+                        ? "M13 17h8m0 0V9m0 8-8-8-4 4-6-6"
+                        : "M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"}
+                    />
                   </svg>
                 }
               />
@@ -610,6 +675,7 @@ export default function RentabilidadePage() {
                 label="Rendimento bruto"
                 value={totalRow?.accumulatedGrossYield}
                 tone="blue"
+                sub="Antes das retencoes"
                 icon={
                   <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8V7m0 9v1" />
@@ -620,6 +686,7 @@ export default function RentabilidadePage() {
                 label="IOF / IRRF"
                 value={totalRow?.accumulatedTaxWithheld}
                 tone="red"
+                sub="Retencoes acumuladas"
                 icon={
                   <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" d="M9 14l6-6m-5.5.5h.01m5 5h.01M19 5v14a2 2 0 01-2 2H7a2 2 0 01-2-2V5a2 2 0 012-2h10a2 2 0 012 2z" />
@@ -630,6 +697,7 @@ export default function RentabilidadePage() {
                 label="Saldo final"
                 value={totalRow?.finalBalance}
                 tone="amber"
+                sub="Posicao final do periodo"
                 icon={
                   <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z" />

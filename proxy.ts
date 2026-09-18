@@ -2,6 +2,11 @@ import { jwtVerify, JWTPayload } from "jose";
 import { NextRequest, NextResponse } from "next/server";
 
 const AUTH_COOKIE_NAME = "dash_contabil_session";
+const shouldLogRequests = process.env.NODE_ENV !== "production";
+
+function logRequest(message: string) {
+  if (shouldLogRequests) console.log(message);
+}
 
 type SessionPayload = JWTPayload & {
   sub: string;
@@ -43,7 +48,7 @@ export default async function proxy(request: NextRequest) {
   const isProtectedPath = pathname === "/" || pathname.startsWith("/app");
   const isAdminPage = pathname.startsWith("/app/admin");
 
-  console.log(
+  logRequest(
     `[proxy] ${request.method} ${pathname} | authenticated=${isAuthenticated} role=${session?.role ?? "none"} jwtSecret=${Boolean(process.env.JWT_SECRET)} hasCookie=${Boolean(request.cookies.get(AUTH_COOKIE_NAME)?.value)}${sessionError ? ` sessionError=${sessionError}` : ""}`
   );
 
@@ -51,21 +56,21 @@ export default async function proxy(request: NextRequest) {
     const loginUrl = new URL("/login", request.url);
     const nextPath = `${pathname}${search}`;
     loginUrl.searchParams.set("next", nextPath);
-    console.log(`[proxy] -> redirect to /login (unauthenticated)`);
+    logRequest(`[proxy] -> redirect to /login (unauthenticated)`);
     return NextResponse.redirect(loginUrl);
   }
 
   if (pathname === "/login" && isAuthenticated) {
-    console.log(`[proxy] -> redirect to / (already authenticated)`);
+    logRequest(`[proxy] -> redirect to / (already authenticated)`);
     return NextResponse.redirect(new URL("/", request.url));
   }
 
   if (isAdminPage && session?.role !== "ADMIN") {
-    console.log(`[proxy] -> redirect to / (not admin)`);
+    logRequest(`[proxy] -> redirect to / (not admin)`);
     return NextResponse.redirect(new URL("/", request.url));
   }
 
-  console.log(`[proxy] -> next()`);
+  logRequest(`[proxy] -> next()`);
   return NextResponse.next();
 }
 

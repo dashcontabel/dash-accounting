@@ -1,11 +1,15 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 
 import AppShell from "@/app/components/app-shell";
 import MultiCompanySelect from "@/app/components/multi-company-select";
 import { companyDataCache, consumeStaleCompanyIds } from "@/lib/dashboard/cache";
+import type {
+  RentabilidadeAccountCompany,
+  RentabilidadeAccountRow,
+} from "@/lib/dashboard/rentabilidade-accounts";
 import {
   RENTABILIDADE_MONTH_LABELS,
   RENTABILIDADE_MONTHS,
@@ -200,10 +204,13 @@ export default function RentabilidadePage() {
   >([]);
   const [selectedCompanyIds, setSelectedCompanyIds] = useState<string[]>([]);
   const [companiesData, setCompaniesData] = useState<CompanyData[]>([]);
+  const [accountCompanies, setAccountCompanies] = useState<RentabilidadeAccountCompany[]>([]);
   const [loadingSummary, setLoadingSummary] = useState(false);
+  const [loadingAccounts, setLoadingAccounts] = useState(false);
   const [isSavingCompany, setIsSavingCompany] = useState(false);
   const [contextMessage, setContextMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [accountErrorMessage, setAccountErrorMessage] = useState<string | null>(null);
   const [selectedYear, setSelectedYear] = useState("");
   const [rangeFrom, setRangeFrom] = useState<RentabilidadeMonth>("01");
   const [rangeTo, setRangeTo] = useState<RentabilidadeMonth>("12");
@@ -301,6 +308,43 @@ export default function RentabilidadePage() {
     void loadSummaries(selectedCompanyIds);
   }, [loadSummaries, selectedCompanyIds]);
 
+  const loadAccountBreakdown = useCallback(async (
+    ids: string[],
+    year: string,
+    from: RentabilidadeMonth,
+    to: RentabilidadeMonth,
+  ) => {
+    if (ids.length === 0 || !year) {
+      setAccountCompanies([]);
+      return;
+    }
+
+    setLoadingAccounts(true);
+    setAccountErrorMessage(null);
+    try {
+      const params = new URLSearchParams({ year, from, to });
+      for (const id of ids) params.append("companyId", id);
+      const response = await fetch(`/api/dashboard/rentabilidade-accounts?${params.toString()}`);
+      const body = (await response.json()) as {
+        companies?: RentabilidadeAccountCompany[];
+        error?: string;
+      };
+
+      if (!response.ok || !body.companies) {
+        setAccountCompanies([]);
+        setAccountErrorMessage(body.error ?? "Nao foi possivel carregar as contas da rentabilidade.");
+        return;
+      }
+
+      setAccountCompanies(body.companies);
+    } catch {
+      setAccountCompanies([]);
+      setAccountErrorMessage("Nao foi possivel carregar as contas da rentabilidade.");
+    } finally {
+      setLoadingAccounts(false);
+    }
+  }, []);
+
   const availableMonths = useMemo(
     () =>
       [
@@ -345,6 +389,10 @@ export default function RentabilidadePage() {
     if (!selectedYear) return "-";
     return `${RENTABILIDADE_MONTH_LABELS[rangeFrom]} a ${RENTABILIDADE_MONTH_LABELS[rangeTo]}/${selectedYear}`;
   }, [rangeFrom, rangeTo, selectedYear]);
+
+  useEffect(() => {
+    void loadAccountBreakdown(selectedCompanyIds, selectedYear, rangeFrom, rangeTo);
+  }, [loadAccountBreakdown, rangeFrom, rangeTo, selectedCompanyIds, selectedYear]);
 
   async function saveDefaultCompany(companyId: string) {
     const response = await fetch("/api/context/active-company", {
@@ -393,6 +441,14 @@ export default function RentabilidadePage() {
 
   const totalRow = statement?.totalRow;
   const allSelected = allowedCompanies.length > 0 && selectedCompanyIds.length === allowedCompanies.length;
+  const accountsByCompany = useMemo(
+    () => new Map(accountCompanies.map((company) => [company.companyId, company.accounts])),
+    [accountCompanies],
+  );
+  const mappedAccountCount = accountCompanies.reduce(
+    (total, company) => total + company.accounts.length,
+    0,
+  );
 
   return (
     <AppShell role={userRole} email={userEmail} onLogout={handleLogout}>
@@ -403,7 +459,7 @@ export default function RentabilidadePage() {
               Rentabilidade
             </h1>
             <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
-              Demonstrativo por empresa, periodo e saldo bancario.
+              Demonstrativo por empresa, conta contabil, periodo e saldo bancario.
             </p>
           </div>
 
@@ -482,13 +538,16 @@ export default function RentabilidadePage() {
 
           <button
             type="button"
-            onClick={() => void loadSummaries(selectedCompanyIds, true)}
-            disabled={loadingSummary || selectedCompanyIds.length === 0}
+            onClick={() => void Promise.all([
+              loadSummaries(selectedCompanyIds, true),
+              loadAccountBreakdown(selectedCompanyIds, selectedYear, rangeFrom, rangeTo),
+            ])}
+            disabled={loadingSummary || loadingAccounts || selectedCompanyIds.length === 0}
             title="Atualizar dados"
             className="flex h-10 items-center gap-1.5 rounded-xl border border-[--border] bg-[--surface] px-3 text-xs font-semibold text-zinc-600 hover:bg-[--surface-2] disabled:opacity-40 dark:text-zinc-300"
           >
             <svg
-              className={`h-3.5 w-3.5 ${loadingSummary ? "animate-spin" : ""}`}
+              className={`h-3.5 w-3.5 ${loadingSummary || loadingAccounts ? "animate-spin" : ""}`}
               fill="none"
               stroke="currentColor"
               strokeWidth={2}
@@ -507,6 +566,12 @@ export default function RentabilidadePage() {
         {errorMessage && (
           <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-700 dark:border-red-900/50 dark:bg-red-950/30 dark:text-red-300">
             {errorMessage}
+          </div>
+        )}
+
+        {accountErrorMessage && (
+          <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-medium text-amber-700 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-300">
+            {accountErrorMessage}
           </div>
         )}
 
@@ -584,7 +649,9 @@ export default function RentabilidadePage() {
                   </p>
                 </div>
                 <p className="text-xs font-semibold text-zinc-500 dark:text-zinc-400">
-                  {statement.rows.length} empresa{statement.rows.length === 1 ? "" : "s"}
+                  {loadingAccounts
+                    ? "Carregando contas..."
+                    : `${mappedAccountCount} conta${mappedAccountCount === 1 ? "" : "s"} em ${statement.rows.length} empresa${statement.rows.length === 1 ? "" : "s"}`}
                 </p>
               </div>
 
@@ -596,8 +663,8 @@ export default function RentabilidadePage() {
                   <table className="w-max min-w-full border-collapse text-sm">
                     <thead>
                       <tr className="border-b border-zinc-200 bg-white dark:border-zinc-700 dark:bg-zinc-900">
-                        <th className="sticky left-0 z-10 w-40 bg-white px-3 py-3 text-left text-[11px] font-extrabold uppercase text-zinc-500 shadow-[1px_0_0_rgba(212,212,216,0.75)] dark:bg-zinc-900 dark:text-zinc-400 dark:shadow-[1px_0_0_rgba(63,63,70,0.9)] sm:w-52 sm:px-4">
-                          Empresa
+                        <th className="sticky left-0 z-10 w-64 bg-white px-4 py-3 text-left text-[11px] font-extrabold uppercase text-zinc-500 shadow-[1px_0_0_rgba(212,212,216,0.75)] dark:bg-zinc-900 dark:text-zinc-400 dark:shadow-[1px_0_0_rgba(63,63,70,0.9)]">
+                          Conta contabil
                         </th>
                         <th className="w-36 border-l border-zinc-100 px-3 py-3 text-right text-[11px] font-extrabold uppercase text-zinc-500 dark:border-zinc-800 dark:text-zinc-400">
                           Saldo 31/12/{Number(selectedYear) - 1}
@@ -620,20 +687,45 @@ export default function RentabilidadePage() {
                       </tr>
                     </thead>
                     <tbody>
-                      {statement.rows.map((row) => (
+                      {statement.rows.map((row) => {
+                        const accounts = accountsByCompany.get(row.companyId) ?? [];
+                        return (
+                          <Fragment key={row.companyId}>
+                            <CompanyGroupRow
+                              companyName={row.companyName}
+                              accountCount={accounts.length}
+                              columnCount={statement.columns.length + 3}
+                              loading={loadingAccounts}
+                            />
+                            {accounts.map((account) => (
+                              <RentabilidadeAccountTableRow
+                                key={`${row.companyId}:${account.accountCode}`}
+                                account={account}
+                                columns={statement.columns}
+                              />
+                            ))}
+                            {!loadingAccounts && accounts.length === 0 && (
+                              <EmptyAccountRow columnCount={statement.columns.length + 3} />
+                            )}
+                            <RentabilidadeTableRow
+                              row={row}
+                              columns={statement.columns}
+                              onMonthClick={setDetail}
+                              subtotal
+                              label="Total da empresa"
+                            />
+                          </Fragment>
+                        );
+                      })}
+                      {statement.rows.length > 1 && (
                         <RentabilidadeTableRow
-                          key={row.companyId}
-                          row={row}
+                          row={statement.totalRow}
                           columns={statement.columns}
                           onMonthClick={setDetail}
+                          total
+                          label="Total consolidado"
                         />
-                      ))}
-                      <RentabilidadeTableRow
-                        row={statement.totalRow}
-                        columns={statement.columns}
-                        onMonthClick={setDetail}
-                        total
-                      />
+                      )}
                     </tbody>
                   </table>
                 </div>
@@ -648,28 +740,153 @@ export default function RentabilidadePage() {
   );
 }
 
+function CompanyGroupRow({
+  companyName,
+  accountCount,
+  columnCount,
+  loading,
+}: {
+  companyName: string;
+  accountCount: number;
+  columnCount: number;
+  loading: boolean;
+}) {
+  return (
+    <tr className="border-y border-zinc-200 bg-zinc-100/80 dark:border-zinc-700 dark:bg-zinc-800/70">
+      <th colSpan={columnCount} className="px-4 py-2.5 text-left">
+        <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
+          <span className="text-sm font-extrabold text-zinc-800 dark:text-zinc-100">
+            {companyName}
+          </span>
+          <span className="rounded-full border border-zinc-200 bg-white px-2 py-0.5 text-[11px] font-semibold text-zinc-500 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-400">
+            {loading
+              ? "Carregando contas..."
+              : `${accountCount} conta${accountCount === 1 ? "" : "s"} mapeada${accountCount === 1 ? "" : "s"}`}
+          </span>
+        </span>
+      </th>
+    </tr>
+  );
+}
+
+function EmptyAccountRow({ columnCount }: { columnCount: number }) {
+  return (
+    <tr className="border-b border-zinc-100 dark:border-zinc-800">
+      <td colSpan={columnCount} className="px-4 py-3 text-sm text-zinc-400 dark:text-zinc-500">
+        Nenhuma conta de rendimento ou imposto mapeada para o periodo.
+      </td>
+    </tr>
+  );
+}
+
+function accountValueForColumn(
+  account: RentabilidadeAccountRow,
+  column: ReturnType<typeof buildRentabilidadeStatement>["columns"][number],
+): number | null {
+  if (column.kind === "month") {
+    return account.months[column.key]?.netYield ?? null;
+  }
+
+  const values = column.months
+    .map((referenceMonth) => account.months[referenceMonth]?.netYield)
+    .filter((value): value is number => value !== undefined);
+  if (values.length === 0) return null;
+  return Number(values.reduce((total, value) => total + value, 0).toFixed(2));
+}
+
+function RentabilidadeAccountTableRow({
+  account,
+  columns,
+}: {
+  account: RentabilidadeAccountRow;
+  columns: ReturnType<typeof buildRentabilidadeStatement>["columns"];
+}) {
+  const accumulatedGross = Object.values(account.months).reduce(
+    (total, month) => total + month.grossYield,
+    0,
+  );
+  const accumulatedTax = Object.values(account.months).reduce(
+    (total, month) => total + month.taxWithheld,
+    0,
+  );
+  const category = accumulatedGross !== 0 && accumulatedTax !== 0
+    ? "Liquido"
+    : accumulatedTax !== 0
+      ? "Retencao"
+      : "Rendimento";
+
+  return (
+    <tr className="border-b border-zinc-100 hover:bg-blue-50/40 dark:border-zinc-800 dark:hover:bg-blue-950/20">
+      <th className="sticky left-0 z-10 w-64 max-w-64 bg-white px-4 py-3 text-left shadow-[1px_0_0_rgba(212,212,216,0.75)] dark:bg-zinc-900 dark:shadow-[1px_0_0_rgba(63,63,70,0.9)]">
+        <span className="flex items-center gap-2">
+          <span className="truncate text-sm font-bold text-zinc-800 dark:text-zinc-100">
+            {account.accountCode}
+          </span>
+          <span className={`shrink-0 rounded-full px-1.5 py-0.5 text-[11px] font-semibold ${
+            category === "Retencao"
+              ? "bg-red-50 text-red-600 dark:bg-red-950/40 dark:text-red-300"
+              : "bg-blue-50 text-blue-600 dark:bg-blue-950/40 dark:text-blue-300"
+          }`}>
+            {category}
+          </span>
+        </span>
+        <span className="mt-0.5 block truncate text-xs font-medium text-zinc-500 dark:text-zinc-400" title={account.accountName}>
+          {account.accountName}
+        </span>
+      </th>
+      <MoneyCell value={null} muted />
+      {columns.map((column) => {
+        const value = accountValueForColumn(account, column);
+        return (
+          <td
+            key={column.key}
+            className={`border-l border-zinc-100 px-3 py-3 text-right text-sm font-semibold tabular-nums dark:border-zinc-800 ${
+              column.kind === "quarter" ? "bg-emerald-50/50 dark:bg-emerald-950/15" : ""
+            } ${valueTone(value)}`}
+            title={formatCurrency(value)}
+          >
+            {formatCurrency(value)}
+          </td>
+        );
+      })}
+      <MoneyCell value={null} muted />
+    </tr>
+  );
+}
+
 function RentabilidadeTableRow({
   row,
   columns,
   onMonthClick,
   total = false,
+  subtotal = false,
+  label,
 }: {
   row: RentabilidadeRow;
   columns: ReturnType<typeof buildRentabilidadeStatement>["columns"];
   onMonthClick: (detail: DetailState) => void;
   total?: boolean;
+  subtotal?: boolean;
+  label?: string;
 }) {
   const rowClass = total
     ? "bg-[#0f4c81] text-white"
-    : "border-b border-zinc-100 last:border-b-0 hover:bg-zinc-50 dark:border-zinc-800 dark:hover:bg-zinc-800/40";
+    : subtotal
+      ? "border-b border-blue-100 bg-blue-50/70 dark:border-blue-900/40 dark:bg-blue-950/25"
+      : "border-b border-zinc-100 last:border-b-0 hover:bg-zinc-50 dark:border-zinc-800 dark:hover:bg-zinc-800/40";
   const stickyClass = total
     ? "bg-[#0f4c81] text-white shadow-[1px_0_0_rgba(255,255,255,0.2)]"
-    : "bg-white text-zinc-800 shadow-[1px_0_0_rgba(212,212,216,0.75)] dark:bg-zinc-900 dark:text-zinc-100 dark:shadow-[1px_0_0_rgba(63,63,70,0.9)]";
+    : subtotal
+      ? "bg-blue-50 text-blue-900 shadow-[1px_0_0_rgba(191,219,254,0.9)] dark:bg-blue-950 dark:text-blue-100 dark:shadow-[1px_0_0_rgba(30,58,138,0.8)]"
+      : "bg-white text-zinc-800 shadow-[1px_0_0_rgba(212,212,216,0.75)] dark:bg-zinc-900 dark:text-zinc-100 dark:shadow-[1px_0_0_rgba(63,63,70,0.9)]";
 
   return (
     <tr className={rowClass}>
-      <th className={`sticky left-0 z-10 w-40 max-w-40 px-3 py-3 text-left text-sm font-extrabold sm:w-52 sm:max-w-52 sm:px-4 ${stickyClass}`}>
-        <span className="block truncate">{row.companyName}</span>
+      <th className={`sticky left-0 z-10 w-64 max-w-64 px-4 py-3 text-left text-sm font-extrabold ${stickyClass}`}>
+        <span className="block truncate">{label ?? row.companyName}</span>
+        {label && !total ? (
+          <span className="mt-0.5 block truncate text-xs font-medium opacity-70">{row.companyName}</span>
+        ) : null}
       </th>
       <MoneyCell value={row.openingBalance} total={total} muted />
       {columns.map((column) => {

@@ -1,5 +1,6 @@
 import { z } from "zod";
 
+import { DETAILED_EXPENSE_FIELDS } from "@/lib/dashboard/expense-fields";
 import { evaluateFormula } from "./formula";
 import type { NormalizedValueColumn, ParsedAccountRow } from "./parser";
 
@@ -21,6 +22,8 @@ export type MappingEngineResult = {
   mappedAccountCodes: string[];
   unmappedAccounts: Array<{ accountCode: string; description: string }>;
 };
+
+const detailedExpenseFieldSet = new Set<string>(DETAILED_EXPENSE_FIELDS);
 
 function normalizeCode(value: string) {
   return value.replace(/\s+/g, "").trim();
@@ -74,9 +77,20 @@ export function applyAccountMappings(rows: ParsedAccountRow[], mappingsInput: un
 
   const staticRules = mappings.filter((rule) => !rule.isCalculated);
   const calculatedRules = mappings.filter((rule) => rule.isCalculated);
+  const detailedExpenseRules = staticRules.filter((rule) =>
+    detailedExpenseFieldSet.has(rule.dashboardField),
+  );
 
   for (const rule of staticRules) {
-    const matchedRows = rows.filter((row) => rowMatchesRule(row, rule));
+    const matchedRows = rows.filter((row) => {
+      if (!rowMatchesRule(row, rule)) return false;
+
+      // DEMAIS_DESPESAS can use a broad prefix (for example, "3"). In that
+      // case it is the residual expense bucket: accounts already classified
+      // in a specific expense field must not be counted a second time.
+      if (rule.dashboardField !== "DEMAIS_DESPESAS") return true;
+      return !detailedExpenseRules.some((detailRule) => rowMatchesRule(row, detailRule));
+    });
     const aggregated = aggregateRows(matchedRows, rule.valueColumn, rule.aggregation);
     summary[rule.dashboardField] = Number(((summary[rule.dashboardField] ?? 0) + aggregated).toFixed(2));
 

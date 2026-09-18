@@ -610,7 +610,7 @@ Filtra os resumos pelo ano selecionado, ordena cronologicamente e agrupa em chun
 
 **Regras de agregação:**
 - Campos normais: **soma** ao longo dos meses do chunk
-- `SD_BANCARIO`: **média** (saldo bancário não se acumula)
+- `SD_BANCARIO`: em filtros nao mensais, usa a ultima posicao disponivel ate o fim selecionado (janeiro a julho exibe julho; se agosto ainda nao foi contabilizado, janeiro a agosto continua exibindo julho); se nenhum saldo existir ate o fim, preserva o fallback agregado
 - `RESULTADO`, `RENTABILIDADE`, `ALUGUEL_LIQUIDO`: **recalculados** a partir das somas dos campos base (evita dupla contagem)
 
 ### `mergeCompanySummaries(allSummaries)`

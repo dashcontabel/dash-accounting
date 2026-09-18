@@ -93,6 +93,7 @@ async function main() {
     { dashboardField: "TRAPICHE_INVEST",       matchType: "LIST"   as const, codes: [],                                  valueColumn: "credito"      as const, aggregation: "SUM"     as const, isCalculated: false, formula: null },
     { dashboardField: "ALUGUEL",               matchType: "LIST"   as const, codes: [],                                  valueColumn: "credito"      as const, aggregation: "SUM"     as const, isCalculated: false, formula: null },
     { dashboardField: "IMPOSTOS",              matchType: "PREFIX" as const, codes: ["3.2.2.03"],                        valueColumn: "debito"       as const, aggregation: "ABS_SUM" as const, isCalculated: false, formula: null },
+    { dashboardField: "PRO_LABORES",           matchType: "LIST"   as const, codes: [],                                  valueColumn: "debito"       as const, aggregation: "ABS_SUM" as const, isCalculated: false, formula: null },
     { dashboardField: "IOF_IRRF",              matchType: "LIST"   as const, codes: ["3.2.2.05.004", "3.2.2.05.006"],   valueColumn: "debito"       as const, aggregation: "ABS_SUM" as const, isCalculated: false, formula: null },
     { dashboardField: "LRA2_DESP",             matchType: "LIST"   as const, codes: [],                                  valueColumn: "debito"       as const, aggregation: "ABS_SUM" as const, isCalculated: false, formula: null },
     { dashboardField: "LRA3_DESP",             matchType: "LIST"   as const, codes: [],                                  valueColumn: "debito"       as const, aggregation: "ABS_SUM" as const, isCalculated: false, formula: null },
@@ -112,7 +113,7 @@ async function main() {
     { dashboardField: "RENTABILIDADE",         matchType: "LIST"   as const, codes: [], valueColumn: "saldo_atual" as const, aggregation: "SUM" as const, isCalculated: true,  formula: "RENDIMENTO_BRUTO - IOF_IRRF" },
     { dashboardField: "ALUGUEL_LIQUIDO",       matchType: "LIST"   as const, codes: [], valueColumn: "saldo_atual" as const, aggregation: "SUM" as const, isCalculated: true,  formula: "ALUGUEL - CONDOMINIO" },
     { dashboardField: "RECEITAS_TOTAL",        matchType: "LIST"   as const, codes: [], valueColumn: "saldo_atual" as const, aggregation: "SUM" as const, isCalculated: true,  formula: "FATURAMENTO + RENDIMENTO_BRUTO + ALUGUEL" },
-    { dashboardField: "DESPESAS_TOTAL",        matchType: "LIST"   as const, codes: [], valueColumn: "saldo_atual" as const, aggregation: "SUM" as const, isCalculated: true,  formula: "IMPOSTOS + IOF_IRRF + LRA2_DESP + LRA3_DESP + B_VISTA_DESP + TRAPICHE_DESP + CONDOMINIO + DEMAIS_DESPESAS" },
+    { dashboardField: "DESPESAS_TOTAL",        matchType: "LIST"   as const, codes: [], valueColumn: "saldo_atual" as const, aggregation: "SUM" as const, isCalculated: true,  formula: "IMPOSTOS + PRO_LABORES + IOF_IRRF + LRA2_DESP + LRA3_DESP + B_VISTA_DESP + TRAPICHE_DESP + CONDOMINIO + DEMAIS_DESPESAS" },
     { dashboardField: "RESULTADO",             matchType: "LIST"   as const, codes: [], valueColumn: "saldo_atual" as const, aggregation: "SUM" as const, isCalculated: true,  formula: "RECEITAS_TOTAL - DESPESAS_TOTAL" },
   ] as const;
 

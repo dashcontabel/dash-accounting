@@ -13,6 +13,7 @@ const querySchema = z.object({
   companyId: z.string().min(1),
   referenceMonth: z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/),
   accountCode: z.string().optional(),
+  excludeDashboardFields: z.array(z.string().trim().min(1).max(100)).max(20).default([]),
   costCenter: z.string().optional(),
   page: z.coerce.number().int().min(1).default(1),
 });
@@ -26,6 +27,26 @@ async function getActiveUserFromSession(request: NextRequest) {
   });
 }
 
+type MappingAccountFilter = {
+  accountCode: { startsWith: string } | { equals: string };
+};
+
+function buildMappingAccountFilters(
+  mappings: Array<{ matchType: string; codes: unknown }>,
+): MappingAccountFilter[] {
+  return mappings.flatMap((mapping) => {
+    if (!Array.isArray(mapping.codes)) return [];
+
+    return mapping.codes
+      .filter((code): code is string => typeof code === "string" && Boolean(code.trim()))
+      .map((code) => ({
+        accountCode: mapping.matchType === "PREFIX"
+          ? { startsWith: code.replace(/\s+/g, "").trim() }
+          : { equals: code.replace(/\s+/g, "").trim() },
+      }));
+  });
+}
+
 /**
  * GET /api/dashboard/transactions
  *
@@ -36,6 +57,7 @@ async function getActiveUserFromSession(request: NextRequest) {
  *   companyId        – required
  *   referenceMonth   – required, "YYYY-MM"
  *   accountCode      – optional, filters to a single account (or its children via PREFIX logic)
+ *   excludeDashboardField – optional/repeatable, excludes accounts mapped to these fields
  *   costCenter       – optional, exact match; use "__null__" to filter entries with no CC
  *   page             – optional, 1-based, default 1
  */
@@ -47,11 +69,15 @@ export async function GET(request: NextRequest) {
 
   // accountCode may be sent as a single param or repeated (multi-code OR filter)
   const rawAccountCodes = request.nextUrl.searchParams.getAll("accountCode").filter(Boolean);
+  const rawExcludeDashboardFields = [
+    ...new Set(request.nextUrl.searchParams.getAll("excludeDashboardField").filter(Boolean)),
+  ];
 
   const parsed = querySchema.safeParse({
     companyId: request.nextUrl.searchParams.get("companyId") ?? "",
     referenceMonth: request.nextUrl.searchParams.get("referenceMonth") ?? "",
     accountCode: rawAccountCodes[0] ?? undefined,
+    excludeDashboardFields: rawExcludeDashboardFields,
     costCenter: request.nextUrl.searchParams.get("costCenter") ?? undefined,
     page: request.nextUrl.searchParams.get("page") ?? 1,
   });
@@ -60,7 +86,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "Parametros invalidos." }, { status: 400 });
   }
 
-  const { companyId, referenceMonth, costCenter, page } = parsed.data;
+  const { companyId, referenceMonth, excludeDashboardFields, costCenter, page } = parsed.data;
 
   try {
     await assertCompanyAccess(user, companyId);
@@ -78,14 +104,35 @@ export async function GET(request: NextRequest) {
         ? { accountCode: { startsWith: rawAccountCodes[0]! } }
         : { OR: rawAccountCodes.map((c) => ({ accountCode: { startsWith: c } })) };
 
+  const exclusionMappings = excludeDashboardFields.length > 0
+    ? await prisma.accountMapping.findMany({
+        where: {
+          dashboardField: { in: excludeDashboardFields },
+          isCalculated: false,
+        },
+        select: { matchType: true, codes: true },
+      })
+    : [];
+  const excludedAccounts = buildMappingAccountFilters(exclusionMappings);
+  const exclusionFilter = excludedAccounts.length > 0
+    ? { NOT: { OR: excludedAccounts } }
+    : {};
+
   // "__null__" is the sentinel value used by the CC UI for entries with no cost center
   const costCenterFilter = costCenter
     ? { costCenter: costCenter === "__null__" ? null : costCenter }
     : {};
+  const where = {
+    companyId,
+    referenceMonth,
+    ...accountFilter,
+    ...exclusionFilter,
+    ...costCenterFilter,
+  };
 
   const [entries, total] = await Promise.all([
     prisma.razaoEntry.findMany({
-      where: { companyId, referenceMonth, ...accountFilter, ...costCenterFilter },
+      where,
       orderBy: [{ entryDate: "asc" }, { accountCode: "asc" }],
       skip: (page - 1) * PAGE_SIZE,
       take: PAGE_SIZE,
@@ -105,7 +152,7 @@ export async function GET(request: NextRequest) {
       },
     }),
     prisma.razaoEntry.count({
-      where: { companyId, referenceMonth, ...accountFilter, ...costCenterFilter },
+      where,
     }),
   ]);
 

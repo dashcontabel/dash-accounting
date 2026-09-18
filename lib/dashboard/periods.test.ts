@@ -5,7 +5,7 @@ import {
   type MonthlySummary,
 } from "./periods";
 
-const makeSummary = (month: string, receitas: number, despesas: number): MonthlySummary => ({
+const makeSummary = (month: string, receitas: number, despesas: number, saldoBancario = 1000): MonthlySummary => ({
   referenceMonth: month,
   dataJson: {
     RECEITAS_TOTAL: receitas,
@@ -15,7 +15,7 @@ const makeSummary = (month: string, receitas: number, despesas: number): Monthly
     IOF_IRRF: 0,
     ALUGUEL: 0,
     CONDOMINIO: 0,
-    SD_BANCARIO: 1000,
+    SD_BANCARIO: saldoBancario,
     RENTABILIDADE: 0,
     ALUGUEL_LIQUIDO: 0,
   },
@@ -84,9 +84,25 @@ describe("aggregateSummaries", () => {
     expect(result[0]!.dataJson.RESULTADO).toBe(33000 - 18000);
   });
 
-  it("averages SD_BANCARIO instead of summing", () => {
-    const result = aggregateSummaries(summaries2024, "quarterly_1", "2024");
-    expect(result[0]!.dataJson.SD_BANCARIO).toBe(1000); // avg of 1000, 1000, 1000
+  it("uses the latest available SD_BANCARIO up to the filtered period end", () => {
+    const balances = [
+      makeSummary("2024-01", 10000, 6000, 100),
+      makeSummary("2024-02", 12000, 7000, 200),
+      makeSummary("2024-03", 11000, 5000, 300),
+      makeSummary("2024-04", 13000, 8000, 400),
+      makeSummary("2024-05", 9000, 4000, 500),
+      makeSummary("2024-06", 14000, 9000, 600),
+      makeSummary("2024-07", 15000, 7000, 700),
+    ];
+
+    const throughJuly = aggregateSummaries(balances, "range", "2024", "01", "07");
+    const throughUnaccountedAugust = aggregateSummaries(balances, "range", "2024", "01", "08");
+
+    expect(throughJuly[0]!.months).toEqual([
+      "2024-01", "2024-02", "2024-03", "2024-04", "2024-05", "2024-06", "2024-07",
+    ]);
+    expect(throughJuly[0]!.dataJson.SD_BANCARIO).toBe(700);
+    expect(throughUnaccountedAugust[0]!.dataJson.SD_BANCARIO).toBe(700);
   });
 
   it("filters to the requested year only", () => {

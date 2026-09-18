@@ -176,19 +176,44 @@ export function useDashboardFreshness({
     setStaleCompanyIds((prev) => prev.filter((id) => id !== companyId));
   }, []);
 
+  // A primitive dependency keeps the polling lifecycle stable even when a
+  // caller creates a new array instance with the same company IDs.
+  const companyIdsKey = [...new Set(companyIds)].sort().join("|");
+
   // ── Polling ──────────────────────────────────────────────────────────────
 
   useEffect(() => {
-    if (companyIds.length === 0) return;
+    if (!companyIdsKey) return;
+
+    const monitoredCompanyIds = companyIdsKey.split("|");
+    let stopped = false;
+    let polling = false;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+
+    const clearTimer = () => {
+      if (timer !== null) {
+        clearTimeout(timer);
+        timer = null;
+      }
+    };
+
+    const scheduleNext = () => {
+      clearTimer();
+      if (stopped || document.visibilityState === "hidden") return;
+      timer = setTimeout(() => {
+        timer = null;
+        void poll();
+      }, pollInterval);
+    };
 
     const poll = async () => {
+      if (stopped || polling || document.visibilityState === "hidden") return;
+      polling = true;
+
       try {
         const params = new URLSearchParams();
-        // Always use the latest companyIds via closure over the state — restart is acceptable
-        for (const id of companyIds) params.append("companyId", id);
-        const res = await fetch(`/api/dashboard/freshness?${params.toString()}`, {
-          cache: "no-store",
-        });
+        for (const id of monitoredCompanyIds) params.append("companyId", id);
+        const res = await fetch(`/api/dashboard/freshness?${params.toString()}`);
         if (!res.ok) return;
 
         const data = (await res.json()) as {
@@ -266,12 +291,28 @@ export function useDashboardFreshness({
         }
       } catch {
         // Polling errors are non-critical — silently skip this cycle
+      } finally {
+        polling = false;
+        scheduleNext();
       }
     };
 
-    const timer = setInterval(() => void poll(), pollInterval);
-    return () => clearInterval(timer);
-  }, [companyIds, pollInterval, addNotifications]);
+    const handleVisibilityChange = () => {
+      clearTimer();
+      if (document.visibilityState === "visible") {
+        void poll();
+      }
+    };
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    scheduleNext();
+
+    return () => {
+      stopped = true;
+      clearTimer();
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, [companyIdsKey, pollInterval, addNotifications]);
 
   return {
     staleCompanyIds,

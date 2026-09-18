@@ -91,6 +91,16 @@ const defaultMappings = [
     isCalculated: false,
     formula: null,
   },
+  // Pro-labores — a conta varia entre planos contabeis; o admin configura os codes.
+  {
+    dashboardField: "PRO_LABORES",
+    matchType: "LIST",
+    codes: [],
+    valueColumn: "debito",
+    aggregation: "ABS_SUM",
+    isCalculated: false,
+    formula: null,
+  },
   {
     dashboardField: "IOF_IRRF",
     matchType: "LIST",
@@ -210,7 +220,7 @@ const defaultMappings = [
     valueColumn: "saldo_atual",
     aggregation: "SUM",
     isCalculated: true,
-    formula: "IMPOSTOS + IOF_IRRF + LRA2_DESP + LRA3_DESP + B_VISTA_DESP + TRAPICHE_DESP + CONDOMINIO + DEMAIS_DESPESAS",
+    formula: "IMPOSTOS + PRO_LABORES + IOF_IRRF + LRA2_DESP + LRA3_DESP + B_VISTA_DESP + TRAPICHE_DESP + CONDOMINIO + DEMAIS_DESPESAS",
   },
   {
     dashboardField: "RESULTADO",

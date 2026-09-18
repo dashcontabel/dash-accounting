@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import Home from "./page";
@@ -105,6 +105,7 @@ describe("Home dashboard", () => {
       CONDOMINIO: 0,
       DISTRIB_LUCROS: 55000,
       DEMAIS_DESPESAS: 11675,
+      PRO_LABORES: 7500,
       SD_BANCARIO: 2136604.36,
       RENTABILIDADE: 16022.72,
       ALUGUEL_LIQUIDO: 0,
@@ -113,9 +114,7 @@ describe("Home dashboard", () => {
       RESULTADO: 107389.48,
     };
 
-    vi.stubGlobal(
-      "fetch",
-      vi.fn().mockImplementation((url: string) => {
+    const fetchMock = vi.fn().mockImplementation((url: string) => {
         if (url === "/api/auth/me") {
           return Promise.resolve({
             ok: true,
@@ -137,7 +136,13 @@ describe("Home dashboard", () => {
         if (url === "/api/dashboard/field-codes") {
           return Promise.resolve({
             ok: true,
-            json: vi.fn().mockResolvedValue({ fieldCodes: {} }),
+            json: vi.fn().mockResolvedValue({
+              fieldCodes: {
+                FATURAMENTO: ["4.1.1"],
+                IMPOSTOS: ["3.2.2.03"],
+                DEMAIS_DESPESAS: ["3"],
+              },
+            }),
           });
         }
         if (url.startsWith("/api/dashboard/tenants")) {
@@ -150,6 +155,28 @@ describe("Home dashboard", () => {
           return Promise.resolve({
             ok: true,
             json: vi.fn().mockResolvedValue({ hasCostCenters: false }),
+          });
+        }
+        if (url.startsWith("/api/dashboard/bank-balances")) {
+          return Promise.resolve({
+            ok: true,
+            json: vi.fn().mockResolvedValue({
+              companies: [
+                {
+                  companyId: "c1",
+                  companyName: "Empresa 1",
+                  referenceMonth: "2024-01",
+                  total: 2136604.36,
+                  accounts: [
+                    {
+                      accountCode: "1.1.1.02.001",
+                      accountName: "Banco do Brasil",
+                      balance: 2136604.36,
+                    },
+                  ],
+                },
+              ],
+            }),
           });
         }
         // /api/dashboard/summary — returns new multi-company format
@@ -165,13 +192,187 @@ describe("Home dashboard", () => {
             ],
           }),
         });
-      }),
-    );
+      });
+    vi.stubGlobal("fetch", fetchMock);
 
     render(<Home />);
 
-    expect(await screen.findAllByText("Receitas")).not.toHaveLength(0);
-    expect(screen.getAllByText("Despesas")).not.toHaveLength(0);
-    expect(screen.getByText("Saldo Disponível")).toBeInTheDocument();
+    const financialSummary = await screen.findByRole("region", { name: "Resumo financeiro" });
+
+    expect(financialSummary).toHaveClass("flex", "flex-col");
+    expect(financialSummary).not.toHaveClass("xl:grid-cols-2");
+
+    expect(
+      within(financialSummary).getAllByRole("heading", { level: 2 }).map((heading) => heading.textContent),
+    ).toEqual(["Receitas", "Saldos Bancários por Conta", "Despesas", "Investimentos e Resultado"]);
+
+    expect(within(financialSummary).queryByText("Diferença entre NFs")).not.toBeInTheDocument();
+    expect(await within(financialSummary).findByText("Banco do Brasil")).toBeInTheDocument();
+    const bankBalanceSection = within(financialSummary)
+      .getByRole("heading", { name: "Saldos Bancários por Conta" })
+      .closest("section");
+    expect(bankBalanceSection).not.toBeNull();
+    expect(within(bankBalanceSection!).getByLabelText("Saldos Bancários por Conta: total"))
+      .toHaveTextContent("R$ 2.136.604,36");
+    expect(bankBalanceSection?.querySelector('[data-division-divider="true"]'))
+      .toHaveClass("h-0.5", "rounded-full", "bg-blue-400/75");
+    expect(within(financialSummary).getByLabelText("Receitas: total"))
+      .toHaveTextContent("R$ 130.010,64");
+    expect(within(financialSummary).getByLabelText("Despesas: total"))
+      .toHaveTextContent("R$ 22.621,16");
+    expect(within(financialSummary).getByLabelText("Investimentos e Resultado: total"))
+      .toHaveTextContent("R$ 107.389,48");
+    expect(within(financialSummary).getByText("Pró-labores")).toBeInTheDocument();
+    expect(within(financialSummary).getByText("Distribuição de Lucros")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Faturamento × Despesas × Resultado" })).toBeInTheDocument();
+
+    const context = screen.getByLabelText("Contexto da visualização");
+    expect(within(context).getByText("Referência")).toHaveClass("font-bold", "uppercase");
+    expect(within(context).getByText("Jan/2024")).toHaveClass("text-base", "sm:text-lg");
+
+    const interactiveCard = within(financialSummary).getByText("Faturamento").closest("article");
+    const detailIndicator = interactiveCard?.querySelector('[data-detail-indicator="true"]');
+
+    expect(detailIndicator).toHaveClass("bg-zinc-600", "motion-safe:animate-pulse");
+    expect(interactiveCard).toHaveTextContent("Detalhamento disponível");
+
+    for (const label of ["Faturamento", "Rend. Líquidos", "Demais Despesas", "Banco do Brasil"]) {
+      const card = within(financialSummary).getByText(label).closest("article");
+      const value = card?.querySelectorAll("p")[1];
+
+      expect(card).toHaveClass("relative", "overflow-hidden", "shadow-sm");
+      expect(value).toHaveClass("text-2xl", "sm:text-3xl");
+      expect(value).toHaveClass("tracking-tight", "tabular-nums");
+    }
+
+    fireEvent.click(within(financialSummary).getByText("Demais Despesas").closest("article")!);
+    await waitFor(() => {
+      const detailUrl = fetchMock.mock.calls
+        .map(([url]) => String(url))
+        .find((url) => url.startsWith("/api/dashboard/transactions?"));
+
+      expect(detailUrl).toContain("accountCode=3");
+      expect(detailUrl).toContain("excludeDashboardField=IMPOSTOS");
+      expect(detailUrl).toContain("excludeDashboardField=IOF_IRRF");
+    });
+  });
+
+  it("highlights the consolidation context and lets the user remove a company by its tag", async () => {
+    const mockSummary = {
+      FATURAMENTO: 100,
+      NFS_RECEBIDAS: 90,
+      RENDIMENTO_BRUTO: 10,
+      ALUGUEL: 0,
+      LRA2_INVEST: 0, LRA3_INVEST: 0, B_VISTA_INVEST: 0, TRAPICHE_INVEST: 0,
+      IMPOSTOS: 5,
+      IOF_IRRF: 0,
+      LRA2_DESP: 0, LRA3_DESP: 0, B_VISTA_DESP: 0, TRAPICHE_DESP: 0,
+      CONDOMINIO: 0,
+      DISTRIB_LUCROS: 0,
+      DEMAIS_DESPESAS: 5,
+      PRO_LABORES: 0,
+      SD_BANCARIO: 1000,
+      RENTABILIDADE: 10,
+      ALUGUEL_LIQUIDO: 0,
+      RECEITAS_TOTAL: 110,
+      DESPESAS_TOTAL: 10,
+      RESULTADO: 100,
+    };
+
+    const companies = [
+      { id: "tag-c1", name: "Empresa Alfa", groupId: "g1" },
+      { id: "tag-c2", name: "Empresa Beta", groupId: "g1" },
+    ];
+
+    const fetchMock = vi.fn().mockImplementation((url: string) => {
+      if (url === "/api/auth/me") {
+        return Promise.resolve({
+          ok: true,
+          json: vi.fn().mockResolvedValue({
+            user: { id: "admin-tags", email: "tags@dashcontabil.com", role: "ADMIN", status: "ACTIVE" },
+            allowedCompanies: companies,
+            activeCompanyId: "tag-c1",
+          }),
+        });
+      }
+      if (url === "/api/context/active-company") {
+        return Promise.resolve({ ok: true, json: vi.fn().mockResolvedValue({ success: true }) });
+      }
+      if (url === "/api/dashboard/field-codes") {
+        return Promise.resolve({ ok: true, json: vi.fn().mockResolvedValue({ fieldCodes: {} }) });
+      }
+      if (url.startsWith("/api/dashboard/tenants")) {
+        return Promise.resolve({ ok: true, json: vi.fn().mockResolvedValue({ hasTenantData: false }) });
+      }
+      if (url.startsWith("/api/dashboard/cost-centers")) {
+        return Promise.resolve({ ok: true, json: vi.fn().mockResolvedValue({ hasCostCenters: false }) });
+      }
+      if (url.startsWith("/api/dashboard/bank-balances")) {
+        const requestedIds = new URL(url, "http://localhost").searchParams.getAll("companyId");
+        return Promise.resolve({
+          ok: true,
+          json: vi.fn().mockResolvedValue({
+            companies: companies
+              .filter((company) => requestedIds.includes(company.id))
+              .map((company) => ({
+                companyId: company.id,
+                companyName: company.name,
+                referenceMonth: "2026-04",
+                total: 1000,
+                accounts: [{
+                  accountCode: `1.1.1.${company.id}`,
+                  accountName: `Conta ${company.name}`,
+                  balance: 1000,
+                }],
+              })),
+          }),
+        });
+      }
+      if (url.startsWith("/api/dashboard/summary")) {
+        const requestedIds = new URL(url, "http://localhost").searchParams.getAll("companyId");
+        return Promise.resolve({
+          ok: true,
+          json: vi.fn().mockResolvedValue({
+            companies: companies
+              .filter((company) => requestedIds.includes(company.id))
+              .map((company) => ({
+                companyId: company.id,
+                companyName: company.name,
+                summaries: [{ referenceMonth: "2026-04", dataJson: mockSummary }],
+              })),
+          }),
+        });
+      }
+      return Promise.resolve({ ok: true, json: vi.fn().mockResolvedValue({}) });
+    });
+
+    vi.stubGlobal("fetch", fetchMock);
+    render(<Home />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Empresa Alfa" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "Empresa Beta" }));
+    fireEvent.click(screen.getByRole("button", { name: "Confirmar" }));
+
+    expect(await screen.findByText("2 empresas")).toBeInTheDocument();
+    expect(within(screen.getByLabelText("Contexto da visualização")).getByText("Consolidado")).toBeInTheDocument();
+    expect(await screen.findByLabelText("Saldos Bancários por Conta: total"))
+      .toHaveTextContent("R$ 2.000,00");
+
+    const alphaTag = screen.getByRole("button", { name: "Remover Empresa Alfa da consolidação" });
+    const betaTag = screen.getByRole("button", { name: "Remover Empresa Beta da consolidação" });
+    expect(alphaTag).toBeInTheDocument();
+    expect(betaTag).toBeInTheDocument();
+
+    fireEvent.click(betaTag);
+
+    await waitFor(() => {
+      expect(screen.queryByRole("button", { name: "Remover Empresa Beta da consolidação" })).not.toBeInTheDocument();
+      expect(screen.getByText("Referência")).toBeInTheDocument();
+    });
+    expect(fetchMock).toHaveBeenCalledWith("/api/context/active-company", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ companyId: "tag-c1" }),
+    });
   });
 });

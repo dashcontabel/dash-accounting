@@ -25,6 +25,10 @@ import {
   type MonthlySummary,
 } from "@/lib/dashboard/periods";
 import { companyDataCache, consumeStaleCompanyIds } from "@/lib/dashboard/cache";
+import {
+  calculateDryLiquidity,
+  hasValidInventoryValue,
+} from "@/lib/dashboard/liquidity-indices";
 import type { CompanyData } from "@/lib/dashboard/types";
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -88,11 +92,7 @@ const INDICES_CONFIG = [
     },
     thresholds: { good: 1.0, warning: 0.5 },
     chartColor: "#0f4c81",
-    calculate: (d: Record<string, number>): number | null => {
-      const pc = d["PASSIVO_CIRCULANTE"] ?? 0;
-      if (pc === 0) return null;
-      return ((d["ATIVO_CIRCULANTE"] ?? 0) - (d["ESTOQUES"] ?? 0)) / pc;
-    },
+    calculate: calculateDryLiquidity,
     requiredFields: ["ATIVO_CIRCULANTE", "PASSIVO_CIRCULANTE", "ESTOQUES"],
   },
   {
@@ -196,10 +196,12 @@ function IndexCard({
   config,
   value,
   isMapped,
+  unavailableMessage,
 }: {
   config: (typeof INDICES_CONFIG)[number];
   value: number | null;
   isMapped: boolean;
+  unavailableMessage?: string | null;
 }) {
   const status = isMapped ? getStatus(value, config.thresholds) : "undefined";
   const s = STATUS_STYLES[status];
@@ -240,7 +242,7 @@ function IndexCard({
           {status === "undefined" && value === null && (
             <div className="mt-3 rounded-lg bg-zinc-100 px-3 py-2 dark:bg-zinc-700/50">
               <p className="text-[11px] text-zinc-500 dark:text-zinc-400">
-                Denominador zero — empresa sem passivos mapeados neste período. Índice não aplicável.
+                {unavailableMessage ?? "Denominador zero — empresa sem passivos mapeados neste período. Índice não aplicável."}
               </p>
             </div>
           )}
@@ -506,11 +508,21 @@ export default function IndicesPage() {
   // Per-index values
   const indexValues = useMemo(
     () =>
-      INDICES_CONFIG.map((cfg) => ({
-        key: cfg.key,
-        value: cfg.calculate(d),
-        isMapped: cfg.requiredFields.some((f) => d[f] !== undefined && d[f] !== 0),
-      })),
+      INDICES_CONFIG.map((cfg) => {
+        const isMapped = cfg.requiredFields.some(
+          (field) => d[field] !== undefined && d[field] !== 0,
+        );
+        const hasInvalidInventory = cfg.key === "LS" && !hasValidInventoryValue(d);
+
+        return {
+          key: cfg.key,
+          value: cfg.calculate(d),
+          isMapped,
+          unavailableMessage: hasInvalidInventory && isMapped
+            ? "Sem valor: estoque ausente, zerado ou negativo neste período. A Liquidez Seca não foi calculada."
+            : null,
+        };
+      }),
     [d],
   );
 
@@ -697,6 +709,7 @@ export default function IndicesPage() {
                     config={cfg}
                     value={iv.value}
                     isMapped={iv.isMapped}
+                    unavailableMessage={iv.unavailableMessage}
                   />
                 );
               })}

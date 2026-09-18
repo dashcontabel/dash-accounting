@@ -40,6 +40,7 @@ import {
   type MonthlySummary,
 } from "@/lib/dashboard/periods";
 import { companyDataCache, consumeStaleCompanyIds, markCompanyStale } from "@/lib/dashboard/cache";
+import { DETAILED_EXPENSE_FIELDS } from "@/lib/dashboard/expense-fields";
 import { useDashboardFreshness } from "@/lib/dashboard/freshness";
 import type { CompanyData } from "@/lib/dashboard/types";
 
@@ -57,6 +58,18 @@ type MeResponse = {
 };
 
 type DashboardData = Record<string, number>;
+
+type BankBalanceCompany = {
+  companyId: string;
+  companyName: string;
+  referenceMonth: string | null;
+  total: number;
+  accounts: Array<{
+    accountCode: string;
+    accountName: string;
+    balance: number;
+  }>;
+};
 
 const MONTH_LABELS: Record<string, string> = {
   "01": "Jan", "02": "Fev", "03": "Mar", "04": "Abr",
@@ -82,15 +95,133 @@ function get(data: DashboardData, field: string): number {
 // ── KPI Card ────────────────────────────────────────────────────────────────
 
 const COLOR_MAP = {
-  blue:   { card: "bg-blue-50 border-blue-100 dark:bg-blue-950/40 dark:border-blue-900/50",     value: "text-blue-700 dark:text-blue-300",     icon: "bg-blue-100 text-blue-600 dark:bg-blue-900/50 dark:text-blue-400"   },
-  green:  { card: "bg-emerald-50 border-emerald-100 dark:bg-emerald-950/40 dark:border-emerald-900/50", value: "text-emerald-700 dark:text-emerald-300", icon: "bg-emerald-100 text-emerald-600 dark:bg-emerald-900/50 dark:text-emerald-400" },
-  red:    { card: "bg-red-50 border-red-100 dark:bg-red-950/40 dark:border-red-900/50",         value: "text-red-700 dark:text-red-300",       icon: "bg-red-100 text-red-600 dark:bg-red-900/50 dark:text-red-400"     },
-  amber:  { card: "bg-amber-50 border-amber-100 dark:bg-amber-950/40 dark:border-amber-900/50", value: "text-amber-700 dark:text-amber-300",   icon: "bg-amber-100 text-amber-600 dark:bg-amber-900/50 dark:text-amber-400" },
-  purple: { card: "bg-purple-50 border-purple-100 dark:bg-purple-950/40 dark:border-purple-900/50", value: "text-purple-700 dark:text-purple-300", icon: "bg-purple-100 text-purple-600 dark:bg-purple-900/50 dark:text-purple-400" },
-  teal:   { card: "bg-teal-50 border-teal-100 dark:bg-teal-950/40 dark:border-teal-900/50",     value: "text-teal-700 dark:text-teal-300",     icon: "bg-teal-100 text-teal-600 dark:bg-teal-900/50 dark:text-teal-400"   },
+  blue: {
+    card: "border-blue-200/80 bg-white/95 dark:border-blue-900/60 dark:bg-zinc-900/90",
+    value: "text-blue-700 dark:text-blue-300",
+    icon: "bg-blue-50 text-blue-600 dark:bg-blue-950/70 dark:text-blue-400",
+    accent: "from-blue-600 via-blue-500 to-cyan-400",
+    glow: "bg-blue-400/15 dark:bg-blue-500/10",
+    dot: "bg-blue-500",
+  },
+  green: {
+    card: "border-emerald-200/80 bg-white/95 dark:border-emerald-900/60 dark:bg-zinc-900/90",
+    value: "text-emerald-700 dark:text-emerald-300",
+    icon: "bg-emerald-50 text-emerald-600 dark:bg-emerald-950/70 dark:text-emerald-400",
+    accent: "from-emerald-600 via-emerald-500 to-lime-400",
+    glow: "bg-emerald-400/15 dark:bg-emerald-500/10",
+    dot: "bg-emerald-500",
+  },
+  red: {
+    card: "border-red-200/80 bg-white/95 dark:border-red-900/60 dark:bg-zinc-900/90",
+    value: "text-red-700 dark:text-red-300",
+    icon: "bg-red-50 text-red-600 dark:bg-red-950/70 dark:text-red-400",
+    accent: "from-red-600 via-red-500 to-orange-400",
+    glow: "bg-red-400/15 dark:bg-red-500/10",
+    dot: "bg-red-500",
+  },
+  amber: {
+    card: "border-amber-200/80 bg-white/95 dark:border-amber-900/60 dark:bg-zinc-900/90",
+    value: "text-amber-700 dark:text-amber-300",
+    icon: "bg-amber-50 text-amber-600 dark:bg-amber-950/70 dark:text-amber-400",
+    accent: "from-amber-600 via-amber-500 to-yellow-400",
+    glow: "bg-amber-400/15 dark:bg-amber-500/10",
+    dot: "bg-amber-500",
+  },
+  purple: {
+    card: "border-purple-200/80 bg-white/95 dark:border-purple-900/60 dark:bg-zinc-900/90",
+    value: "text-purple-700 dark:text-purple-300",
+    icon: "bg-purple-50 text-purple-600 dark:bg-purple-950/70 dark:text-purple-400",
+    accent: "from-purple-600 via-violet-500 to-fuchsia-400",
+    glow: "bg-purple-400/15 dark:bg-purple-500/10",
+    dot: "bg-purple-500",
+  },
+  teal: {
+    card: "border-teal-200/80 bg-white/95 dark:border-teal-900/60 dark:bg-zinc-900/90",
+    value: "text-teal-700 dark:text-teal-300",
+    icon: "bg-teal-50 text-teal-600 dark:bg-teal-950/70 dark:text-teal-400",
+    accent: "from-teal-600 via-teal-500 to-cyan-400",
+    glow: "bg-teal-400/15 dark:bg-teal-500/10",
+    dot: "bg-teal-500",
+  },
 } as const;
 
 type KpiColor = keyof typeof COLOR_MAP;
+
+const DIVISION_MAP = {
+  blue: {
+    container: "border-blue-200 bg-blue-500/10 dark:border-blue-900/30 dark:bg-blue-950/10",
+    icon: "bg-blue-100 text-blue-600 dark:bg-blue-900/50 dark:text-blue-400",
+    title: "text-blue-800 dark:text-blue-300",
+    divider: "bg-blue-400/75 dark:bg-blue-700/75",
+  },
+  green: {
+    container: "border-emerald-200 bg-emerald-500/10 dark:border-emerald-900/30 dark:bg-emerald-950/10",
+    icon: "bg-emerald-100 text-emerald-600 dark:bg-emerald-900/50 dark:text-emerald-400",
+    title: "text-emerald-800 dark:text-emerald-300",
+    divider: "bg-emerald-400/75 dark:bg-emerald-700/75",
+  },
+  teal: {
+    container: "border-teal-200 bg-teal-500/10 dark:border-teal-900/30 dark:bg-teal-950/10",
+    icon: "bg-teal-100 text-teal-600 dark:bg-teal-900/50 dark:text-teal-400",
+    title: "text-teal-800 dark:text-teal-300",
+    divider: "bg-teal-400/75 dark:bg-teal-700/75",
+  },
+  red: {
+    container: "border-red-200 bg-red-500/10 dark:border-red-900/30 dark:bg-red-950/10",
+    icon: "bg-red-100 text-red-600 dark:bg-red-900/50 dark:text-red-400",
+    title: "text-red-800 dark:text-red-300",
+    divider: "bg-red-400/75 dark:bg-red-700/75",
+  },
+  purple: {
+    container: "border-purple-200 bg-purple-500/10 dark:border-purple-900/30 dark:bg-purple-950/10",
+    icon: "bg-purple-100 text-purple-600 dark:bg-purple-900/50 dark:text-purple-400",
+    title: "text-purple-800 dark:text-purple-300",
+    divider: "bg-purple-400/75 dark:bg-purple-700/75",
+  },
+} as const;
+
+type DivisionColor = keyof typeof DIVISION_MAP;
+
+function DashboardDivision({
+  id,
+  title,
+  color,
+  icon,
+  total,
+  children,
+}: {
+  id: string;
+  title: string;
+  color: DivisionColor;
+  icon: React.ReactNode;
+  total?: number;
+  children: React.ReactNode;
+}) {
+  const styles = DIVISION_MAP[color];
+
+  return (
+    <section aria-labelledby={id} className={`rounded-2xl border p-5 sm:p-6 ${styles.container}`}>
+      <div className="mb-4 flex items-center gap-2">
+        <span className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-lg ${styles.icon}`}>
+          {icon}
+        </span>
+        <h2 id={id} className={`text-sm font-bold ${styles.title}`}>{title}</h2>
+        <div data-division-divider="true" className={`ml-2 h-0.5 flex-1 rounded-full ${styles.divider}`} />
+        {total !== undefined ? (
+          <p
+            aria-label={`${title}: total`}
+            data-division-total="true"
+            className={`shrink-0 whitespace-nowrap text-sm font-extrabold tracking-tight tabular-nums sm:text-base ${styles.title}`}
+          >
+            <span className="sr-only">Total: </span>
+            {formatCurrency(total)}
+          </p>
+        ) : null}
+      </div>
+      {children}
+    </section>
+  );
+}
 
 function KpiCard({
   label,
@@ -110,31 +241,58 @@ function KpiCard({
   const c = COLOR_MAP[color];
   // Only allow drill-down when there is an actual non-zero value to inspect
   const interactive = !!onDrillDown && !!value && value !== 0;
+  const formattedValue = formatCurrency(value);
+
   return (
     <article
-      className={`group min-w-0 rounded-2xl border p-5 transition-shadow hover:shadow-md ${c.card} ${interactive ? "cursor-pointer" : ""}`}
+      className={`group relative flex min-h-[9.5rem] min-w-0 flex-col overflow-hidden rounded-xl border p-5 shadow-sm backdrop-blur-sm transition-all duration-200 xl:p-4 2xl:p-5 ${c.card} ${interactive ? "cursor-pointer hover:-translate-y-0.5 hover:shadow-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40 focus-visible:ring-offset-2 focus-visible:ring-offset-white dark:focus-visible:ring-offset-zinc-950" : ""}`}
       onClick={interactive ? onDrillDown : undefined}
       role={interactive ? "button" : undefined}
       tabIndex={interactive ? 0 : undefined}
-      onKeyDown={interactive ? (e) => { if (e.key === "Enter" || e.key === " ") onDrillDown!(); } : undefined}
+      onKeyDown={interactive ? (e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          onDrillDown!();
+        }
+      } : undefined}
     >
-      <div className="flex items-start justify-between gap-2">
-        <p className="min-w-0 text-xs font-semibold uppercase leading-tight tracking-wider text-zinc-500 dark:text-zinc-400">{label}</p>
+      <span aria-hidden="true" className={`absolute inset-x-0 top-0 h-1 bg-gradient-to-r ${c.accent}`} />
+      <span aria-hidden="true" className={`absolute -right-8 -top-8 h-24 w-24 rounded-full blur-2xl ${c.glow}`} />
+
+      <div className="relative z-10 flex items-start justify-between gap-3">
+        <p className="min-w-0 text-sm font-semibold uppercase leading-snug tracking-[0.08em] text-zinc-600 dark:text-zinc-300">{label}</p>
         {icon && (
-          <span className={`relative flex h-8 w-8 shrink-0 items-center justify-center rounded-xl ${c.icon}`}>
+          <span className={`relative flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ring-1 ring-inset ring-black/5 dark:ring-white/10 ${c.icon}`}>
             {icon}
             {interactive && (
-              <span className="absolute -right-1 -top-1 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-blue-500 ring-2 ring-white dark:ring-zinc-900">
-                <svg className="h-2 w-2 text-white" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24" aria-hidden="true">
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-4.35-4.35M17 11A6 6 0 1 1 5 11a6 6 0 0 1 12 0z" />
-                </svg>
-              </span>
+              <>
+                <span
+                  aria-hidden="true"
+                  data-detail-indicator="true"
+                  className="absolute -right-1.5 -top-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-zinc-600 text-white shadow-sm ring-2 ring-white motion-safe:animate-pulse dark:bg-zinc-300 dark:text-zinc-900 dark:ring-zinc-900"
+                >
+                  <svg className="h-2 w-2 transition-transform duration-300 motion-safe:group-hover:-rotate-12 motion-safe:group-hover:scale-125 motion-reduce:transition-none" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-4.35-4.35M17 11A6 6 0 1 1 5 11a6 6 0 0 1 12 0z" />
+                  </svg>
+                </span>
+                <span className="sr-only">Detalhamento disponível</span>
+              </>
             )}
           </span>
         )}
       </div>
-      <p className={`mt-3 min-w-0 truncate text-sm font-bold sm:text-base ${c.value}`}>{formatCurrency(value)}</p>
-      {sub ? <p className="mt-1.5 text-[11px] text-zinc-400 dark:text-zinc-500">{sub}</p> : null}
+
+      <div className="relative z-10 mt-auto pt-6">
+        <p title={formattedValue} className={`min-w-0 truncate text-2xl font-extrabold leading-none tracking-tight tabular-nums sm:text-3xl xl:text-xl 2xl:text-2xl ${c.value}`}>
+          {formattedValue}
+        </p>
+        {sub ? (
+          <div className="mt-4 flex items-center gap-2 border-t border-zinc-200/80 pt-3 dark:border-zinc-800">
+            <span aria-hidden="true" className={`h-1.5 w-1.5 shrink-0 rounded-full ${c.dot}`} />
+            <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400">{sub}</p>
+          </div>
+        ) : null}
+      </div>
     </article>
   );
 }
@@ -229,9 +387,16 @@ export default function Home() {
   const [draftRangeFrom, setDraftRangeFrom] = useState("01");
   const [draftRangeTo, setDraftRangeTo] = useState("12");
   const [isSyncing, setIsSyncing] = useState(false);
-  const [drillDown, setDrillDown] = useState<{ accountCode: string | null; accountCodes?: string[]; label: string } | null>(null);
+  const [drillDown, setDrillDown] = useState<{
+    accountCode: string | null;
+    accountCodes?: string[];
+    excludeDashboardFields?: string[];
+    label: string;
+  } | null>(null);
   const [mappingCodes, setMappingCodes] = useState<Record<string, string[]>>({});
   const [expenseDetailEntries, setExpenseDetailEntries] = useState<{ name: string; value: number; fill: string }[]>([]);
+  const [bankBalanceCompanies, setBankBalanceCompanies] = useState<BankBalanceCompany[]>([]);
+  const [loadingBankBalances, setLoadingBankBalances] = useState(false);
 
   // ── Freshness polling + notifications ──────────────────────────────────────
 
@@ -244,9 +409,9 @@ export default function Home() {
     clearStale,
     refreshBaseline,
   } = useDashboardFreshness({
-    // Poll ALL accessible companies, not just selected ones, so users get
-    // notified about any company they have access to.
-    companyIds: allowedCompanies.map((c) => c.id),
+    // Monitor only the active selection to keep polling cost proportional to
+    // what the user is currently viewing.
+    companyIds: selectedCompanyIds,
     companiesData,
     allCompanies: allowedCompanies,
   });
@@ -402,6 +567,73 @@ export default function Home() {
 
   const d = activeSummary?.dataJson ?? {};
 
+  const bankBalanceEndMonth = useMemo(() => {
+    if (!selectedYear) return "";
+    if (granularity === "monthly") {
+      return selectedMonth ? `${selectedYear}-${selectedMonth}` : "";
+    }
+    return activePeriod?.months.at(-1) ?? "";
+  }, [activePeriod, granularity, selectedMonth, selectedYear]);
+
+  useEffect(() => {
+    if (selectedCompanyIds.length === 0 || !bankBalanceEndMonth) {
+      setBankBalanceCompanies([]);
+      return;
+    }
+
+    const controller = new AbortController();
+    const params = new URLSearchParams({ endMonth: bankBalanceEndMonth });
+    for (const companyId of selectedCompanyIds) params.append("companyId", companyId);
+
+    setLoadingBankBalances(true);
+    void fetch(`/api/dashboard/bank-balances?${params.toString()}`, {
+      signal: controller.signal,
+    })
+      .then(async (response) => {
+        if (!response.ok) return { companies: [] as BankBalanceCompany[] };
+        return response.json() as Promise<{ companies: BankBalanceCompany[] }>;
+      })
+      .then((body) => {
+        if (!controller.signal.aborted) setBankBalanceCompanies(body.companies ?? []);
+      })
+      .catch(() => {
+        if (!controller.signal.aborted) setBankBalanceCompanies([]);
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setLoadingBankBalances(false);
+      });
+
+    return () => controller.abort();
+  }, [bankBalanceEndMonth, companiesData, selectedCompanyIds]);
+
+  const bankBalanceCards = useMemo(
+    () => bankBalanceCompanies.flatMap((company) =>
+      (company.accounts ?? []).map((account) => ({
+        ...account,
+        companyId: company.companyId,
+        companyName: company.companyName,
+        referenceMonth: company.referenceMonth,
+      })),
+    ),
+    [bankBalanceCompanies],
+  );
+
+  const bankBalanceTotal = bankBalanceCompanies.length > 0
+    ? bankBalanceCompanies.reduce((sum, company) => sum + company.total, 0)
+    : get(d, "SD_BANCARIO");
+
+  const investmentsTotal =
+    get(d, "LRA2_INVEST") +
+    get(d, "LRA3_INVEST") +
+    get(d, "B_VISTA_INVEST") +
+    get(d, "TRAPICHE_INVEST");
+  const investmentAccountCodes = [
+    ...(mappingCodes["LRA2_INVEST"] ?? []),
+    ...(mappingCodes["LRA3_INVEST"] ?? []),
+    ...(mappingCodes["B_VISTA_INVEST"] ?? []),
+    ...(mappingCodes["TRAPICHE_INVEST"] ?? []),
+  ];
+
   // Chart series:
   //   monthly   → one bar per month in the selected year
   //   otherwise → one bar per individual month inside the active period
@@ -409,7 +641,7 @@ export default function Home() {
     if (granularity === "monthly") {
       return aggregatedPeriods.map((p) => ({
         period: p.label,
-        Receitas: p.dataJson["RECEITAS_TOTAL"] ?? 0,
+        Faturamento: p.dataJson["FATURAMENTO"] ?? 0,
         Despesas: p.dataJson["DESPESAS_TOTAL"] ?? 0,
         Resultado: p.dataJson["RESULTADO"] ?? 0,
       }));
@@ -422,7 +654,7 @@ export default function Home() {
         const mm = s.referenceMonth.slice(5, 7);
         return {
           period: `${MONTH_LABELS[mm] ?? mm}/${selectedYear.slice(2)}`,
-          Receitas: s.dataJson["RECEITAS_TOTAL"] ?? 0,
+          Faturamento: s.dataJson["FATURAMENTO"] ?? 0,
           Despesas: s.dataJson["DESPESAS_TOTAL"] ?? 0,
           Resultado: s.dataJson["RESULTADO"] ?? 0,
         };
@@ -439,7 +671,14 @@ export default function Home() {
   }, [mergedSummaries, selectedYear]);
 
   // Per-company receitas series (for comparative bar chart when multi-company)
-  const isMultiCompany = companiesData.length > 1;
+  const isMultiCompany = selectedCompanyIds.length > 1;
+  const selectedCompanies = useMemo(
+    () => selectedCompanyIds.flatMap((id) => {
+      const company = allowedCompanies.find((candidate) => candidate.id === id);
+      return company ? [company] : [];
+    }),
+    [allowedCompanies, selectedCompanyIds],
+  );
   // Drill-down available only for single-company monthly view (single referenceMonth is unambiguous)
   const canDrillDown = !isMultiCompany && granularity === "monthly" && !!selectedYear && !!selectedMonth;
   const COMPANY_COLORS = ["#10b981", "#0f4c81", "#f59e0b", "#ef4444", "#a855f7", "#0ea5e9"];
@@ -593,6 +832,11 @@ export default function Home() {
       referenceMonth: `${selectedYear}-${selectedMonth}`,
       accountCode,
     });
+    if (categoryKey === "DEMAIS_DESPESAS") {
+      for (const field of DETAILED_EXPENSE_FIELDS) {
+        params.append("excludeDashboardField", field);
+      }
+    }
     fetch(`/api/dashboard/transactions?${params.toString()}`)
       .then((r) => r.json())
       .then((data: { entries?: { description: string | null; debit: number }[] }) => {
@@ -668,6 +912,11 @@ export default function Home() {
       setContextMessage(ok ? "Empresa padrão atualizada." : "Não foi possível salvar empresa padrão.");
       setIsSavingCompany(false);
     }
+  }
+
+  function handleRemoveCompany(companyId: string) {
+    if (selectedCompanyIds.length <= 1) return;
+    void handleSelectCompanies(selectedCompanyIds.filter((id) => id !== companyId));
   }
 
   async function handleLogout() {
@@ -980,28 +1229,64 @@ export default function Home() {
               </div>
             </div>
           ) : (
-            <div className="mt-5 flex items-center justify-between gap-3">
-              <p className="text-xs text-zinc-400 dark:text-zinc-500">
+            <div aria-label="Contexto da visualização" className="mt-5 flex flex-col gap-3 rounded-2xl border border-zinc-200/80 bg-white/80 px-4 py-3.5 shadow-sm backdrop-blur-sm dark:border-zinc-700/70 dark:bg-zinc-900/70 sm:flex-row sm:items-center sm:justify-between">
+              <div className="min-w-0">
                 {isMultiCompany ? (
                   <>
-                    <strong className="text-zinc-600 dark:text-zinc-300">{companiesData.length} empresas</strong>
-                    {" · "}consolidado
-                    {granularity !== "monthly" && activePeriod && (
-                      <> · <span className="font-semibold text-zinc-600 dark:text-zinc-300">{activePeriod.label}</span></>
-                    )}
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-blue-50 text-[#0f4c81] dark:bg-blue-950/60 dark:text-blue-300">
+                        <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24" aria-hidden="true">
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M3 21h18M5 21V7l7-4v18M19 21V11l-7-4M8 9h1m-1 4h1m-1 4h1m6-5h1m-1 4h1" />
+                        </svg>
+                      </span>
+                      <strong className="text-base font-bold tracking-tight text-zinc-800 dark:text-zinc-100 sm:text-lg">
+                        {selectedCompanies.length} empresas
+                      </strong>
+                      <span className="rounded-full bg-blue-50 px-2.5 py-1 text-[11px] font-bold uppercase tracking-[0.08em] text-[#0f4c81] dark:bg-blue-950/60 dark:text-blue-300">
+                        Consolidado
+                      </span>
+                      {granularity !== "monthly" && activePeriod && (
+                        <span className="text-sm font-semibold text-zinc-500 dark:text-zinc-400">{activePeriod.label}</span>
+                      )}
+                    </div>
+                    <div className="mt-2.5 flex flex-wrap gap-2" aria-label="Empresas selecionadas">
+                      {selectedCompanies.map((company) => (
+                        <button
+                          key={company.id}
+                          type="button"
+                          onClick={() => handleRemoveCompany(company.id)}
+                          disabled={isSavingCompany}
+                          aria-label={`Remover ${company.name} da consolidação`}
+                          title={`Remover ${company.name}`}
+                          className="group/tag inline-flex max-w-full items-center gap-1.5 rounded-full border border-blue-200 bg-blue-50/80 px-2.5 py-1 text-xs font-semibold text-blue-700 transition hover:border-red-200 hover:bg-red-50 hover:text-red-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40 disabled:cursor-wait disabled:opacity-60 dark:border-blue-800/60 dark:bg-blue-950/40 dark:text-blue-300 dark:hover:border-red-800/60 dark:hover:bg-red-950/40 dark:hover:text-red-300"
+                        >
+                          <span className="max-w-56 truncate">{company.name}</span>
+                          <svg className="h-3.5 w-3.5 shrink-0 transition-transform group-hover/tag:scale-110" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24" aria-hidden="true">
+                            <path strokeLinecap="round" d="M6 6l12 12M18 6L6 18" />
+                          </svg>
+                        </button>
+                      ))}
+                    </div>
                   </>
                 ) : (
-                  <>
-                    Referência:{" "}
-                    <strong className="text-zinc-600 dark:text-zinc-300">
-                      {granularity === "monthly"
-                        ? `${MONTH_LABELS[selectedMonth] ?? selectedMonth}/${selectedYear}`
-                        : activePeriod?.label ?? selectedYear}
-                    </strong>
-                  </>
+                  <div className="flex items-center gap-3">
+                    <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-blue-50 text-[#0f4c81] dark:bg-blue-950/60 dark:text-blue-300">
+                      <svg className="h-[18px] w-[18px]" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24" aria-hidden="true">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M8 2v3m8-3v3M3.5 9.5h17M5 4h14a2 2 0 012 2v13a2 2 0 01-2 2H5a2 2 0 01-2-2V6a2 2 0 012-2z" />
+                      </svg>
+                    </span>
+                    <p className="flex flex-col">
+                      <span className="text-[11px] font-bold uppercase tracking-[0.1em] text-zinc-400 dark:text-zinc-500">Referência</span>
+                      <strong className="text-base font-bold tracking-tight text-zinc-800 dark:text-zinc-100 sm:text-lg">
+                        {granularity === "monthly"
+                          ? `${MONTH_LABELS[selectedMonth] ?? selectedMonth}/${selectedYear}`
+                          : activePeriod?.label ?? selectedYear}
+                      </strong>
+                    </p>
+                  </div>
                 )}
-              </p>
-              <div className="flex items-center gap-2">
+              </div>
+              <div className="flex shrink-0 items-center gap-2">
                 {!isMultiCompany && granularity === "monthly" && (
                   <button
                     onClick={() => void handleRecalculate()}
@@ -1021,75 +1306,145 @@ export default function Home() {
             <p className="mt-1 text-right text-xs text-zinc-500 dark:text-zinc-400">{recalcMsg}</p>
           ) : null}
 
-          {/* ── Row 1: KPI Cards principais ──────────────────────────── */}
-                    <div className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
-                      <KpiCard label="Faturamento" value={get(d, "FATURAMENTO")} color="green"
-                        sub="NFs emitidas" icon={Icons.invoice}
-                        onDrillDown={canDrillDown && mappingCodes["FATURAMENTO"]?.[0] ? () => setDrillDown({ accountCode: mappingCodes["FATURAMENTO"][0]!, label: "Faturamento" }) : undefined} />
-                      <KpiCard label="NFs Recebidas" value={get(d, "NFS_RECEBIDAS")} color="teal"
-                        sub="Pagamentos recebidos" icon={Icons.invoice}
-                        onDrillDown={canDrillDown && mappingCodes["NFS_RECEBIDAS"]?.[0] ? () => setDrillDown({ accountCode: mappingCodes["NFS_RECEBIDAS"][0]!, label: "NFs Recebidas" }) : undefined} />
-                      <KpiCard label="Rentabilidade" value={get(d, "RENTABILIDADE")} color="teal"
-                        sub="Rend. bruto − IOF/IRRF" icon={Icons.trending} />
-                      <KpiCard label="Rendimento Bruto" value={get(d, "RENDIMENTO_BRUTO")} color="blue"
-                        sub="Aplicações financeiras" icon={Icons.chart}
-                        onDrillDown={canDrillDown && mappingCodes["RENDIMENTO_BRUTO"]?.[0] ? () => setDrillDown({ accountCode: mappingCodes["RENDIMENTO_BRUTO"][0]!, label: "Rendimento Bruto" }) : undefined} />
-                      <KpiCard label="Saldo Disponível" value={get(d, "SD_BANCARIO")} color="purple"
-                        sub="Soma de todas as contas" icon={Icons.bank}
-                        onDrillDown={canDrillDown && mappingCodes["SD_BANCARIO"]?.[0] ? () => setDrillDown({ accountCode: mappingCodes["SD_BANCARIO"][0]!, label: "Saldo Bancário" }) : undefined} />
-          </div>
+          {/* ── Resumo financeiro por divisões ──────────────────────────── */}
+          <section aria-label="Resumo financeiro" className="mt-6 flex flex-col gap-4">
+            <DashboardDivision
+              id="dashboard-receitas"
+              title="Receitas"
+              color="green"
+              icon={Icons.invoice}
+              total={get(d, "RECEITAS_TOTAL")}
+            >
+              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
+                <KpiCard label="Faturamento" value={get(d, "FATURAMENTO")} color="green"
+                  sub="NFs emitidas" icon={Icons.invoice}
+                  onDrillDown={canDrillDown && mappingCodes["FATURAMENTO"]?.[0] ? () => setDrillDown({ accountCode: mappingCodes["FATURAMENTO"][0]!, label: "Faturamento" }) : undefined} />
+                <KpiCard label="NFs Recebidas" value={get(d, "NFS_RECEBIDAS")} color="green"
+                  sub="Pagamentos recebidos" icon={Icons.invoice}
+                  onDrillDown={canDrillDown && mappingCodes["NFS_RECEBIDAS"]?.[0] ? () => setDrillDown({ accountCode: mappingCodes["NFS_RECEBIDAS"][0]!, label: "NFs Recebidas" }) : undefined} />
+                <KpiCard label="Aluguel" value={get(d, "ALUGUEL")} color="green" icon={Icons.building} />
+                <KpiCard label="Rec. Passivas" value={get(d, "RENDIMENTO_BRUTO")} color="teal"
+                  sub="Rendimentos de aplicações" icon={Icons.chart}
+                  onDrillDown={canDrillDown && mappingCodes["RENDIMENTO_BRUTO"]?.[0] ? () => setDrillDown({ accountCode: mappingCodes["RENDIMENTO_BRUTO"][0]!, label: "Receitas Passivas" }) : undefined} />
+                <KpiCard label="Rend. Líquidos" value={get(d, "RENTABILIDADE")} color="teal"
+                  sub="Rendimentos menos IOF/IRRF" icon={Icons.trending} />
+              </div>
+            </DashboardDivision>
 
-          {/* ── Row 2: Centro de Custo ──────────────────────────────────── */}
+            <DashboardDivision
+              id="dashboard-saldos-bancarios"
+              title="Saldos Bancários por Conta"
+              color="blue"
+              icon={Icons.bank}
+              total={bankBalanceTotal}
+            >
+              {loadingBankBalances ? (
+                <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                  {[0, 1, 2].map((item) => (
+                    <div key={item} aria-hidden="true" className="h-[9.5rem] animate-pulse rounded-xl border border-blue-100 bg-white/70 dark:border-blue-900/50 dark:bg-zinc-900/50" />
+                  ))}
+                  <span className="sr-only">Carregando saldos bancários por conta...</span>
+                </div>
+              ) : bankBalanceCards.length > 0 ? (
+                <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+                  {bankBalanceCards.map((account) => {
+                    const month = account.referenceMonth?.slice(5, 7) ?? "";
+                    const year = account.referenceMonth?.slice(0, 4) ?? "";
+                    const accountReference = month && year ? `${MONTH_LABELS[month] ?? month}/${year}` : "";
+                    return (
+                      <KpiCard
+                        key={`${account.companyId}:${account.accountCode}`}
+                        label={account.accountName}
+                        value={account.balance}
+                        color="blue"
+                        icon={Icons.bank}
+                        sub={[account.accountCode, isMultiCompany ? account.companyName : "", accountReference].filter(Boolean).join(" · ")}
+                      />
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                  <KpiCard label="Saldo Bancário" value={get(d, "SD_BANCARIO")} color="blue"
+                    sub="Composição por conta indisponível" icon={Icons.bank}
+                    onDrillDown={canDrillDown && mappingCodes["SD_BANCARIO"]?.[0] ? () => setDrillDown({ accountCode: mappingCodes["SD_BANCARIO"][0]!, label: "Saldo Bancário" }) : undefined} />
+                </div>
+              )}
+            </DashboardDivision>
+
+            <DashboardDivision
+              id="dashboard-despesas"
+              title="Despesas"
+              color="red"
+              icon={Icons.tax}
+              total={get(d, "DESPESAS_TOTAL")}
+            >
+              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                <KpiCard label="Impostos" value={get(d, "IMPOSTOS")} color="red" icon={Icons.tax}
+                  onDrillDown={canDrillDown && mappingCodes["IMPOSTOS"]?.[0] ? () => setDrillDown({ accountCode: mappingCodes["IMPOSTOS"][0]!, label: "Impostos" }) : undefined} />
+                <KpiCard label="Pró-labores" value={get(d, "PRO_LABORES")} color="red" icon={Icons.dollar}
+                  onDrillDown={canDrillDown && mappingCodes["PRO_LABORES"]?.[0] ? () => setDrillDown({ accountCode: mappingCodes["PRO_LABORES"][0]!, label: "Pró-labores" }) : undefined} />
+                <KpiCard label="Demais Despesas" value={get(d, "DEMAIS_DESPESAS")} color="red" icon={Icons.chart}
+                  onDrillDown={canDrillDown && mappingCodes["DEMAIS_DESPESAS"]?.[0] ? () => setDrillDown({
+                    accountCode: mappingCodes["DEMAIS_DESPESAS"][0]!,
+                    excludeDashboardFields: [...DETAILED_EXPENSE_FIELDS],
+                    label: "Demais Despesas",
+                  }) : undefined} />
+              </div>
+            </DashboardDivision>
+
+            <DashboardDivision
+              id="dashboard-resultados"
+              title="Investimentos e Resultado"
+              color="purple"
+              icon={Icons.profit}
+              total={get(d, "RESULTADO")}
+            >
+              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                <KpiCard label="Investimentos" value={investmentsTotal} color="teal" icon={Icons.trending}
+                  onDrillDown={canDrillDown && investmentAccountCodes.length > 0 ? () => setDrillDown({ accountCode: null, accountCodes: investmentAccountCodes, label: "Investimentos" }) : undefined} />
+                <KpiCard label="Distribuição de Lucros" value={get(d, "DISTRIB_LUCROS")} color="purple" icon={Icons.profit}
+                  onDrillDown={canDrillDown && mappingCodes["DISTRIB_LUCROS"]?.length ? () => setDrillDown({ accountCode: null, accountCodes: mappingCodes["DISTRIB_LUCROS"], label: "Distribuição de Lucros" }) : undefined} />
+                <KpiCard label="Resultado" value={get(d, "RESULTADO")} color={get(d, "RESULTADO") >= 0 ? "green" : "red"}
+                  sub={get(d, "RESULTADO") >= 0 ? "▲ Superávit" : "▼ Déficit"} icon={Icons.profit} />
+              </div>
+            </DashboardDivision>
+          </section>
+
+          <section aria-labelledby="dashboard-faturamento-despesas-resultado" className="mt-4 rounded-2xl border border-blue-200 bg-blue-500/10 p-5 dark:border-blue-900/30 dark:bg-blue-950/10 sm:p-6">
+            <div className="mb-4 flex items-center gap-2">
+              <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-blue-100 text-blue-600 dark:bg-blue-900/50 dark:text-blue-400">{Icons.chart}</span>
+              <h2 id="dashboard-faturamento-despesas-resultado" className="text-sm font-bold text-blue-800 dark:text-blue-300">Faturamento × Despesas × Resultado</h2>
+              <div className="ml-2 h-px flex-1 bg-blue-200/70 dark:bg-blue-900/40" />
+            </div>
+            <div className="rounded-xl border border-blue-100 bg-white p-3 shadow-sm dark:border-blue-900/50 dark:bg-zinc-900/80 sm:p-5">
+              {chartSeries.length > 0 ? (
+                <ResponsiveContainer width="100%" height={280}>
+                  <BarChart data={chartSeries} barCategoryGap="24%" barGap={3} margin={{ left: -4, right: 4 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke={chartTheme.grid} vertical={false} />
+                    <XAxis dataKey="period" tick={{ fontSize: 10, fill: chartTheme.tick }} axisLine={false} tickLine={false} interval="preserveStartEnd" />
+                    <YAxis tickFormatter={formatCurrencyShort} width={58} tick={{ fontSize: 10, fill: chartTheme.tick }} axisLine={false} tickLine={false} />
+                    <Tooltip formatter={currencyTooltipFormatter} contentStyle={{ fontSize: 12, borderRadius: 10, border: `1px solid ${chartTheme.tooltip.border}`, background: chartTheme.tooltip.background, boxShadow: "0 4px 12px rgba(0,0,0,.15)" }} labelStyle={{ fontWeight: 600, color: chartTheme.tooltip.label }} />
+                    <Legend wrapperStyle={{ fontSize: 11, paddingTop: 10 }} iconSize={10} />
+                    <ReferenceLine y={0} stroke={chartTheme.grid} />
+                    <Bar dataKey="Faturamento" fill="#10b981" radius={[4, 4, 0, 0]} />
+                    <Bar dataKey="Despesas" fill="#ef4444" radius={[4, 4, 0, 0]} />
+                    <Bar dataKey="Resultado" fill="#0f4c81" radius={[4, 4, 0, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              ) : (
+                <p className="py-12 text-center text-sm text-zinc-400 dark:text-zinc-500">Sem dados no período selecionado.</p>
+              )}
+            </div>
+          </section>
+
+          {/* ── Centro de Custo ─────────────────────────────────────────── */}
           {canDrillDown && selectedCompanyIds.length === 1 && (
                     <CostCenterSection
                       companyId={selectedCompanyIds[0]!}
                       referenceMonth={`${selectedYear}-${selectedMonth}`}
             />
           )}
-
-          {/* ── Row 3: Despesas | Receitas | Resultado | Distribuição ──── */}
-          <div className="mt-4 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-                      <div className="flex flex-col rounded-2xl border-2 border-red-200 bg-red-50 p-6 dark:border-red-800/50 dark:bg-red-950/40">
-                        <p className="text-[11px] font-bold uppercase tracking-widest text-zinc-400 dark:text-zinc-500">Total de Despesas</p>
-                        <p className="mt-2 min-w-0 truncate text-2xl font-extrabold text-red-700 sm:text-3xl dark:text-red-400">
-                          {formatCurrency(get(d, "DESPESAS_TOTAL"))}
-                        </p>
-                      </div>
-                      <div className="flex flex-col rounded-2xl border-2 border-emerald-200 bg-emerald-50 p-6 dark:border-emerald-800/50 dark:bg-emerald-950/40">
-                        <p className="text-[11px] font-bold uppercase tracking-widest text-zinc-400 dark:text-zinc-500">Total de Receitas</p>
-                        <p className="mt-2 min-w-0 truncate text-2xl font-extrabold text-emerald-700 sm:text-3xl dark:text-emerald-400">
-                          {formatCurrency(get(d, "RECEITAS_TOTAL"))}
-                        </p>
-                      </div>
-                      <div className={`flex flex-col rounded-2xl border-2 p-6 ${
-                        get(d, "RESULTADO") >= 0
-                          ? "border-emerald-200 bg-emerald-50 dark:border-emerald-800/50 dark:bg-emerald-950/40"
-                          : "border-red-200 bg-red-50 dark:border-red-800/50 dark:bg-red-950/40"
-                      }`}>
-                        <p className="text-[11px] font-bold uppercase tracking-widest text-zinc-400 dark:text-zinc-500">Resultado do Período</p>
-                        <p className={`mt-2 min-w-0 truncate text-2xl font-extrabold sm:text-3xl ${
-                          get(d, "RESULTADO") >= 0 ? "text-emerald-700 dark:text-emerald-400" : "text-red-700 dark:text-red-400"
-                        }`}>
-                          {formatCurrency(get(d, "RESULTADO"))}
-                        </p>
-                        <p className={`mt-1 text-sm font-semibold ${
-                          get(d, "RESULTADO") >= 0 ? "text-emerald-500" : "text-red-500"
-                        }`}>
-                          {get(d, "RESULTADO") >= 0 ? "▲ Superávit" : "▼ Déficit"}
-                        </p>
-                      </div>
-                      <KpiCard
-                        label="Distribuição de Lucros"
-                        value={get(d, "DISTRIB_LUCROS")}
-                        color="amber"
-                        icon={Icons.profit}
-                        onDrillDown={
-                          canDrillDown && mappingCodes["DISTRIB_LUCROS"]?.length
-                            ? () => setDrillDown({ accountCode: null, accountCodes: mappingCodes["DISTRIB_LUCROS"], label: "Distribuição de Lucros" })
-                            : undefined
-                        }
-                      />
-          </div>
 
           {/* ── Análise Anual ─────────────────────────────────────────── */}
                     <div className="mt-5 rounded-2xl border border-zinc-300 bg-zinc-500/10 p-3 dark:border-zinc-700/40 dark:bg-zinc-800/20 sm:p-5 lg:p-6">
@@ -1123,10 +1478,10 @@ export default function Home() {
                       </div>
 
                       <div className="grid grid-cols-1 gap-3 sm:gap-4 lg:grid-cols-5">
-                        <div className="rounded-xl border border-zinc-100 bg-white p-3 dark:border-zinc-700/50 dark:bg-zinc-900/50 sm:p-4 lg:col-span-3">
+                        <div className={isMultiCompany ? "rounded-xl border border-zinc-100 bg-white p-3 dark:border-zinc-700/50 dark:bg-zinc-900/50 sm:p-4 lg:col-span-3" : "hidden"}>
                           {!isMultiCompany ? (
                             <>
-                              <p className="mb-3 text-xs font-semibold text-zinc-500 dark:text-zinc-400">Receitas × Despesas por período</p>
+                              <p className="mb-3 text-xs font-semibold text-zinc-500 dark:text-zinc-400">Faturamento × Despesas × Resultado</p>
                               {chartSeries.length > 0 ? (
                                 <ResponsiveContainer width="100%" height={220}>
                                   <BarChart data={chartSeries} barCategoryGap="28%" barGap={2} margin={{ left: -4, right: 4 }}>
@@ -1135,8 +1490,9 @@ export default function Home() {
                                     <YAxis tickFormatter={formatCurrencyShort} width={52} tick={{ fontSize: 10, fill: chartTheme.tick }} axisLine={false} tickLine={false} />
                                     <Tooltip formatter={currencyTooltipFormatter} contentStyle={{ fontSize: 12, borderRadius: 10, border: `1px solid ${chartTheme.tooltip.border}`, background: chartTheme.tooltip.background, boxShadow: "0 4px 12px rgba(0,0,0,.15)" }} labelStyle={{ fontWeight: 600, color: chartTheme.tooltip.label }} />
                                     <Legend wrapperStyle={{ fontSize: 11, paddingTop: 8 }} iconSize={10} />
-                                    <Bar dataKey="Receitas" fill="#10b981" radius={[4, 4, 0, 0]} />
+                                    <Bar dataKey="Faturamento" fill="#10b981" radius={[4, 4, 0, 0]} />
                                     <Bar dataKey="Despesas" fill="#ef4444" radius={[4, 4, 0, 0]} />
+                                    <Bar dataKey="Resultado" fill="#0f4c81" radius={[4, 4, 0, 0]} />
                                     <ReferenceLine y={0} stroke={chartTheme.grid} />
                                   </BarChart>
                                 </ResponsiveContainer>
@@ -1192,7 +1548,7 @@ export default function Home() {
                           )}
                         </div>
 
-                        <div className="flex flex-col rounded-xl border border-zinc-100 bg-white p-3 dark:border-zinc-700/50 dark:bg-zinc-900/50 sm:p-4 lg:col-span-2">
+                        <div className={`flex flex-col rounded-xl border border-zinc-100 bg-white p-3 dark:border-zinc-700/50 dark:bg-zinc-900/50 sm:p-4 ${isMultiCompany ? "lg:col-span-2" : "lg:col-span-5"}`}>
                           <div className="mb-3 flex items-center justify-between">
                             <p className="text-xs font-semibold text-zinc-500 dark:text-zinc-400">
                               {mainExpenseData.length >= 2
@@ -1301,102 +1657,6 @@ export default function Home() {
                         </div>
                       )}
                     </div>
-
-
-          {/* ── Receitas & Despesas Detalhado ─────────────────────────── */}
-                    <>
-                      <div className="mt-5 grid gap-4 lg:grid-cols-2">
-                        {/* RECEITAS GROUP */}
-                        <div className="rounded-2xl border border-emerald-200 bg-emerald-500/10 p-5 dark:border-emerald-900/30 dark:bg-emerald-950/10 sm:p-6">
-                          <div className="mb-4 flex items-center gap-2">
-                            <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-emerald-100 text-emerald-600 dark:bg-emerald-900/50 dark:text-emerald-400">
-                              {Icons.trending}
-                            </span>
-                            <h2 className="text-sm font-bold text-emerald-800 dark:text-emerald-300">Receitas</h2>
-                            <div className="ml-2 h-px flex-1 bg-emerald-200/70 dark:bg-emerald-900/40" />
-                            <span className="text-xs font-semibold text-emerald-700 dark:text-emerald-400">
-                              {formatCurrency(get(d, "RECEITAS_TOTAL"))}
-                            </span>
-                          </div>
-                          <div className="grid gap-4 sm:grid-cols-2">
-                            <KpiCard label="Faturamento" value={get(d, "FATURAMENTO")} color="green" sub="NFs emitidas" icon={Icons.invoice}
-                              onDrillDown={canDrillDown && mappingCodes["FATURAMENTO"]?.[0] ? () => setDrillDown({ accountCode: mappingCodes["FATURAMENTO"][0]!, label: "Faturamento" }) : undefined} />
-                            <KpiCard label="NFs Recebidas" value={get(d, "NFS_RECEBIDAS")} color="teal" sub="Pagamentos recebidos" icon={Icons.invoice}
-                              onDrillDown={canDrillDown && mappingCodes["NFS_RECEBIDAS"]?.[0] ? () => setDrillDown({ accountCode: mappingCodes["NFS_RECEBIDAS"][0]!, label: "NFs Recebidas" }) : undefined} />
-                            <KpiCard label="Rendimento Bruto" value={get(d, "RENDIMENTO_BRUTO")} color="blue" sub="Aplicações financeiras" icon={Icons.chart}
-                              onDrillDown={canDrillDown && mappingCodes["RENDIMENTO_BRUTO"]?.[0] ? () => setDrillDown({ accountCode: mappingCodes["RENDIMENTO_BRUTO"][0]!, label: "Rendimento Bruto" }) : undefined} />
-                            <KpiCard label="Aluguel" value={get(d, "ALUGUEL")} color="teal" icon={Icons.building} />
-                          </div>
-                          {(get(d, "LRA2_INVEST") + get(d, "LRA3_INVEST") + get(d, "B_VISTA_INVEST") + get(d, "TRAPICHE_INVEST")) > 0 ? (
-                            <div className="mt-3 grid gap-3 sm:grid-cols-2">
-                              <KpiCard label="LRA2 (Invest.)" value={get(d, "LRA2_INVEST")} color="blue" />
-                              <KpiCard label="LRA3 (Invest.)" value={get(d, "LRA3_INVEST")} color="blue" />
-                              <KpiCard label="B. Vista (Invest.)" value={get(d, "B_VISTA_INVEST")} color="blue" />
-                              <KpiCard label="Trapiche (Invest.)" value={get(d, "TRAPICHE_INVEST")} color="blue" />
-                            </div>
-                          ) : null}
-                          <div className="mt-4 grid gap-3 sm:grid-cols-3">
-                            {[
-                              { label: "NFs Emitidas", value: get(d, "FATURAMENTO"), color: "text-emerald-700 dark:text-emerald-400" },
-                              { label: "NFs Recebidas", value: get(d, "NFS_RECEBIDAS"), color: "text-teal-700 dark:text-teal-400" },
-                              { label: "Diferença", value: get(d, "FATURAMENTO") - get(d, "NFS_RECEBIDAS"), color: get(d, "FATURAMENTO") - get(d, "NFS_RECEBIDAS") >= 0 ? "text-amber-600 dark:text-amber-400" : "text-red-600 dark:text-red-400" },
-                            ].map(({ label, value, color }) => (
-                              <div key={label} className="min-w-0 flex items-center rounded-xl border border-emerald-100 bg-white/80 px-4 py-3 dark:border-emerald-900/30 dark:bg-zinc-800/50">
-                                <div className="min-w-0">
-                                  <p className="text-xs text-zinc-400 dark:text-zinc-500">{label}</p>
-                                  <p className={`mt-0.5 truncate text-xs font-bold sm:text-sm ${color}`}>{formatCurrency(value)}</p>
-                                </div>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-
-                        {/* DESPESAS GROUP */}
-                        <div className="rounded-2xl border border-red-200 bg-red-500/10 p-5 dark:border-red-900/30 dark:bg-red-950/10 sm:p-6">
-                          <div className="mb-4 flex items-center gap-2">
-                            <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-red-100 text-red-600 dark:bg-red-900/50 dark:text-red-400">
-                              {Icons.tax}
-                            </span>
-                            <h2 className="text-sm font-bold text-red-800 dark:text-red-300">Despesas</h2>
-                            <div className="ml-2 h-px flex-1 bg-red-200/70 dark:bg-red-900/40" />
-                            <span className="text-xs font-semibold text-red-700 dark:text-red-400">
-                              {formatCurrency(get(d, "DESPESAS_TOTAL"))}
-                            </span>
-                          </div>
-                          <div className="grid gap-4 sm:grid-cols-2">
-                            <KpiCard label="Impostos" value={get(d, "IMPOSTOS")} color="red" icon={Icons.tax}
-                              onDrillDown={canDrillDown && mappingCodes["IMPOSTOS"]?.[0] ? () => setDrillDown({ accountCode: mappingCodes["IMPOSTOS"][0]!, label: "Impostos" }) : undefined} />
-                            <KpiCard label="IOF / IRRF" value={get(d, "IOF_IRRF")} color="red" icon={Icons.dollar}
-                              onDrillDown={canDrillDown && mappingCodes["IOF_IRRF"]?.[0] ? () => setDrillDown({ accountCode: mappingCodes["IOF_IRRF"][0]!, label: "IOF / IRRF" }) : undefined} />
-                            <KpiCard label="Demais Despesas" value={get(d, "DEMAIS_DESPESAS")} color="amber" icon={Icons.chart}
-                              onDrillDown={canDrillDown && mappingCodes["DEMAIS_DESPESAS"]?.[0] ? () => setDrillDown({ accountCode: mappingCodes["DEMAIS_DESPESAS"][0]!, label: "Demais Despesas" }) : undefined} />
-                            <KpiCard label="Condomínio" value={get(d, "CONDOMINIO")} color="amber" icon={Icons.building} />
-                          </div>
-                          {(get(d, "LRA2_DESP") + get(d, "LRA3_DESP") + get(d, "B_VISTA_DESP") + get(d, "TRAPICHE_DESP")) > 0 ? (
-                            <div className="mt-3 grid gap-3 sm:grid-cols-2">
-                              <KpiCard label="LRA2 (Desp.)" value={get(d, "LRA2_DESP")} color="red" />
-                              <KpiCard label="LRA3 (Desp.)" value={get(d, "LRA3_DESP")} color="red" />
-                              <KpiCard label="B. Vista (Desp.)" value={get(d, "B_VISTA_DESP")} color="red" />
-                              <KpiCard label="Trapiche (Desp.)" value={get(d, "TRAPICHE_DESP")} color="red" />
-                            </div>
-                          ) : null}
-                        </div>
-                      </div>
-
-                      {/* Rendimento Passivo (Aluguel Líquido) */}
-                      <div className="mt-4 rounded-2xl border border-teal-200 bg-teal-500/10 p-5 dark:border-teal-900/30 dark:bg-teal-950/10">
-                        <div className="mb-3 flex items-center gap-2">
-                          <span className="flex h-6 w-6 items-center justify-center rounded-lg bg-teal-100 text-teal-600 dark:bg-teal-900/50 dark:text-teal-400">
-                            {Icons.trending}
-                          </span>
-                          <h3 className="text-xs font-bold uppercase tracking-widest text-zinc-400 dark:text-zinc-500">Rendimento Passivo</h3>
-                        </div>
-                        <div className="grid gap-3 sm:grid-cols-2">
-                          <KpiCard label="Rentabilidade" value={get(d, "RENTABILIDADE")} color="teal" sub="Rend. bruto − IOF/IRRF" icon={Icons.trending} />
-                          <KpiCard label="Aluguel Líquido" value={get(d, "ALUGUEL_LIQUIDO")} color="teal" sub="Aluguel − Condomínio" icon={Icons.building} />
-                        </div>
-                      </div>
-                    </>
         </>
       )}
 
@@ -1407,6 +1667,7 @@ export default function Home() {
           referenceMonth={`${selectedYear}-${selectedMonth}`}
           accountCode={drillDown.accountCode}
           accountCodes={drillDown.accountCodes}
+          excludeDashboardFields={drillDown.excludeDashboardFields}
           label={drillDown.label}
           onClose={() => setDrillDown(null)}
         />

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 type RazaoEntry = {
   id: string;
@@ -26,6 +26,14 @@ type ApiResponse = {
   };
   error?: string;
 };
+
+type LoadState = {
+  requestUrl: string;
+  entries: RazaoEntry[];
+  pagination: ApiResponse["pagination"];
+};
+
+const EMPTY_PAGINATION = { total: 0, totalPages: 1, page: 1, pageSize: 100 };
 
 const MONTH_LABELS: Record<string, string> = {
   "01": "Janeiro",  "02": "Fevereiro", "03": "Março",    "04": "Abril",
@@ -53,6 +61,7 @@ export default function RazaoTransactionsModal({
   referenceMonth,
   accountCode,
   accountCodes,
+  excludeDashboardFields,
   costCenter,
   label,
   onClose,
@@ -62,35 +71,59 @@ export default function RazaoTransactionsModal({
   accountCode: string | null;
   /** When provided, overrides accountCode and filters by multiple codes (OR logic). */
   accountCodes?: string[];
+  /** Dashboard fields whose mapped accounts must be excluded from the result. */
+  excludeDashboardFields?: string[];
   /** When set, filters entries to this cost center. Use "__null__" for entries with no CC. */
   costCenter?: string | null;
   label: string;
   onClose: () => void;
 }) {
-  const [entries, setEntries] = useState<RazaoEntry[]>([]);
-  const [loading, setLoading] = useState(true);
   const [page, setPage] = useState(1);
-  const [pagination, setPagination] = useState({ total: 0, totalPages: 1, page: 1 });
+  const requestUrl = useMemo(() => {
+    const params = new URLSearchParams({ companyId, referenceMonth, page: String(page) });
+    const codes = accountCodes && accountCodes.length > 0 ? accountCodes : accountCode ? [accountCode] : [];
+    for (const code of codes) params.append("accountCode", code);
+    for (const field of excludeDashboardFields ?? []) {
+      params.append("excludeDashboardField", field);
+    }
+    if (costCenter !== undefined && costCenter !== null) params.set("costCenter", costCenter);
+    return `/api/dashboard/transactions?${params.toString()}`;
+  }, [companyId, referenceMonth, accountCode, accountCodes, excludeDashboardFields, costCenter, page]);
+  const [loadState, setLoadState] = useState<LoadState>({
+    requestUrl: "",
+    entries: [],
+    pagination: EMPTY_PAGINATION,
+  });
   const overlayRef = useRef<HTMLDivElement>(null);
+
+  const isCurrentRequest = loadState.requestUrl === requestUrl;
+  const entries = isCurrentRequest ? loadState.entries : [];
+  const pagination = isCurrentRequest ? loadState.pagination : EMPTY_PAGINATION;
+  const loading = !isCurrentRequest;
 
   // Fetch whenever page or filter changes
   useEffect(() => {
-    const params = new URLSearchParams({ companyId, referenceMonth, page: String(page) });
-    // Multi-code filter takes priority; falls back to single accountCode
-    const codes = accountCodes && accountCodes.length > 0 ? accountCodes : accountCode ? [accountCode] : [];
-    for (const c of codes) params.append("accountCode", c);
-    if (costCenter !== undefined && costCenter !== null) params.set("costCenter", costCenter);
+    let cancelled = false;
 
-    setLoading(true);
-    fetch(`/api/dashboard/transactions?${params.toString()}`)
+    fetch(requestUrl)
       .then((r) => r.json() as Promise<ApiResponse>)
       .then((data) => {
-        setEntries(data.entries ?? []);
-        if (data.pagination) setPagination(data.pagination);
+        if (cancelled) return;
+        setLoadState({
+          requestUrl,
+          entries: data.entries ?? [],
+          pagination: data.pagination ?? EMPTY_PAGINATION,
+        });
       })
-      .catch(() => setEntries([]))
-      .finally(() => setLoading(false));
-  }, [companyId, referenceMonth, accountCode, costCenter, page]);
+      .catch(() => {
+        if (cancelled) return;
+        setLoadState({ requestUrl, entries: [], pagination: EMPTY_PAGINATION });
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [requestUrl]);
 
   // Close on backdrop click
   function handleOverlayClick(e: React.MouseEvent) {

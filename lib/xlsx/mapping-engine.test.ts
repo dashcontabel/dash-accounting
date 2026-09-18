@@ -74,4 +74,79 @@ describe("applyAccountMappings", () => {
     expect(result.summary.RENTABILIDADE).toBe(900);
     expect(result.unmappedAccounts).toHaveLength(0);
   });
+
+  it("keeps specifically classified expenses out of DEMAIS_DESPESAS", () => {
+    const rows = [
+      {
+        accountCode: "3.2.2.03.001",
+        description: "Impostos municipais",
+        values: { saldo_atual: 0, saldo_anterior: 0, debito: 100, credito: 0 },
+      },
+      {
+        accountCode: "3.2.2.05.004",
+        description: "IOF",
+        values: { saldo_atual: 0, saldo_anterior: 0, debito: 20, credito: 0 },
+      },
+      {
+        accountCode: "3.2.1.01",
+        description: "Despesa administrativa",
+        values: { saldo_atual: 0, saldo_anterior: 0, debito: 300, credito: 0 },
+      },
+    ];
+
+    const mappings = [
+      {
+        id: "taxes",
+        dashboardField: "IMPOSTOS",
+        matchType: "PREFIX",
+        codes: ["3.2.2.03"],
+        valueColumn: "debito",
+        aggregation: "ABS_SUM",
+        isCalculated: false,
+        formula: null,
+      },
+      {
+        id: "iof",
+        dashboardField: "IOF_IRRF",
+        matchType: "LIST",
+        codes: ["3.2.2.05.004"],
+        valueColumn: "debito",
+        aggregation: "ABS_SUM",
+        isCalculated: false,
+        formula: null,
+      },
+      {
+        id: "other-expenses",
+        dashboardField: "DEMAIS_DESPESAS",
+        matchType: "PREFIX",
+        codes: ["3"],
+        valueColumn: "debito",
+        aggregation: "ABS_SUM",
+        isCalculated: false,
+        formula: null,
+      },
+      {
+        id: "total-expenses",
+        dashboardField: "DESPESAS_TOTAL",
+        matchType: "LIST",
+        codes: [],
+        valueColumn: "saldo_atual",
+        aggregation: "SUM",
+        isCalculated: true,
+        formula: "IMPOSTOS + IOF_IRRF + DEMAIS_DESPESAS",
+      },
+    ];
+
+    const result = applyAccountMappings(rows, mappings);
+
+    expect(result.summary.IMPOSTOS).toBe(100);
+    expect(result.summary.IOF_IRRF).toBe(20);
+    expect(result.summary.DEMAIS_DESPESAS).toBe(300);
+    expect(result.summary.DESPESAS_TOTAL).toBe(420);
+    expect(result.mappedAccountCodes).toEqual(expect.arrayContaining([
+      "3.2.2.03.001",
+      "3.2.2.05.004",
+      "3.2.1.01",
+    ]));
+  });
 });

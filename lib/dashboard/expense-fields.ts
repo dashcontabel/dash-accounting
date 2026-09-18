@@ -1,0 +1,10 @@
+export const DETAILED_EXPENSE_FIELDS = [
+  "IMPOSTOS",
+  "PRO_LABORES",
+  "IOF_IRRF",
+  "LRA2_DESP",
+  "LRA3_DESP",
+  "B_VISTA_DESP",
+  "TRAPICHE_DESP",
+  "CONDOMINIO",
+] as const;

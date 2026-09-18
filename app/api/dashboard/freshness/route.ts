@@ -20,7 +20,9 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "Nao autenticado." }, { status: 401 });
   }
 
-  const companyIds = request.nextUrl.searchParams.getAll("companyId").filter(Boolean);
+  const companyIds = [
+    ...new Set(request.nextUrl.searchParams.getAll("companyId").filter(Boolean)),
+  ];
   if (companyIds.length === 0) {
     return NextResponse.json({ error: "companyId obrigatorio." }, { status: 400 });
   }
@@ -39,29 +41,15 @@ export async function GET(request: NextRequest) {
       ? {}
       : { userCompanies: { some: { userId: user.id } } };
 
-  const companies = await prisma.company.findMany({
+  // Access validation and freshness data are fetched together, keeping the
+  // endpoint at two top-level Prisma operations: active user + accessible companies.
+  const companyRows = await prisma.company.findMany({
     where: {
       id: { in: companyIds },
       isActive: true,
       group: { isActive: true },
       ...accessFilter,
     },
-    select: { id: true },
-  });
-
-  if (companies.length < companyIds.length) {
-    return NextResponse.json({ error: "Acesso negado." }, { status: 403 });
-  }
-
-  const accessibleIds = companies.map((c) => c.id);
-
-  // Fetch Company.updatedAt (bumped on any structural mutation like delete) and
-  // the most recent DashboardMonthlySummary.updatedAt in a single query.
-  // Returning max(company.updatedAt, latestSummary.updatedAt) means the client
-  // always gets a non-null timestamp that advances on every mutation (import,
-  // recalculate, delete).
-  const companyRows = await prisma.company.findMany({
-    where: { id: { in: accessibleIds } },
     select: {
       id: true,
       updatedAt: true,
@@ -78,6 +66,10 @@ export async function GET(request: NextRequest) {
       },
     },
   });
+
+  if (companyRows.length < companyIds.length) {
+    return NextResponse.json({ error: "Acesso negado." }, { status: 403 });
+  }
 
   const result = companyRows.map((c) => {
     const companyTs = c.updatedAt.toISOString();

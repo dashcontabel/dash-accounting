@@ -78,18 +78,14 @@ describe("GET /api/dashboard/freshness", () => {
     const { prisma } = await import("@/lib/prisma");
     vi.mocked(getUserFromRequest).mockResolvedValue({ sub: "u1" } as never);
     vi.mocked(prisma.user.findFirst).mockResolvedValue({ id: "u1", role: "ADMIN" } as never);
-    // Access check
-    vi.mocked(prisma.company.findMany)
-      .mockResolvedValueOnce([{ id: "c1" }] as never)
-      // Data query
-      .mockResolvedValueOnce([
-        {
-          id: "c1",
-          updatedAt: NOW,
-          dashboardMonthlySummaries: [],
-          importBatches: [],
-        },
-      ] as never);
+    vi.mocked(prisma.company.findMany).mockResolvedValueOnce([
+      {
+        id: "c1",
+        updatedAt: NOW,
+        dashboardMonthlySummaries: [],
+        importBatches: [],
+      },
+    ] as never);
 
     const res = await GET(makeRequest(["c1"]));
     const body = await res.json();
@@ -99,6 +95,7 @@ describe("GET /api/dashboard/freshness", () => {
     expect(body.companies[0].companyId).toBe("c1");
     expect(body.companies[0].updatedAt).toBe(NOW.toISOString());
     expect(body.companies[0].latestBatch).toBeNull();
+    expect(prisma.company.findMany).toHaveBeenCalledTimes(1);
   });
 
   it("returns summary updatedAt when it is newer than company updatedAt", async () => {
@@ -106,16 +103,14 @@ describe("GET /api/dashboard/freshness", () => {
     const { prisma } = await import("@/lib/prisma");
     vi.mocked(getUserFromRequest).mockResolvedValue({ sub: "u1" } as never);
     vi.mocked(prisma.user.findFirst).mockResolvedValue({ id: "u1", role: "ADMIN" } as never);
-    vi.mocked(prisma.company.findMany)
-      .mockResolvedValueOnce([{ id: "c1" }] as never)
-      .mockResolvedValueOnce([
-        {
-          id: "c1",
-          updatedAt: EARLIER,
-          dashboardMonthlySummaries: [{ updatedAt: NOW }],
-          importBatches: [],
-        },
-      ] as never);
+    vi.mocked(prisma.company.findMany).mockResolvedValueOnce([
+      {
+        id: "c1",
+        updatedAt: EARLIER,
+        dashboardMonthlySummaries: [{ updatedAt: NOW }],
+        importBatches: [],
+      },
+    ] as never);
 
     const res = await GET(makeRequest(["c1"]));
     const body = await res.json();
@@ -128,16 +123,14 @@ describe("GET /api/dashboard/freshness", () => {
     const { prisma } = await import("@/lib/prisma");
     vi.mocked(getUserFromRequest).mockResolvedValue({ sub: "u1" } as never);
     vi.mocked(prisma.user.findFirst).mockResolvedValue({ id: "u1", role: "ADMIN" } as never);
-    vi.mocked(prisma.company.findMany)
-      .mockResolvedValueOnce([{ id: "c1" }] as never)
-      .mockResolvedValueOnce([
-        {
-          id: "c1",
-          updatedAt: NOW,
-          dashboardMonthlySummaries: [{ updatedAt: EARLIER }],
-          importBatches: [],
-        },
-      ] as never);
+    vi.mocked(prisma.company.findMany).mockResolvedValueOnce([
+      {
+        id: "c1",
+        updatedAt: NOW,
+        dashboardMonthlySummaries: [{ updatedAt: EARLIER }],
+        importBatches: [],
+      },
+    ] as never);
 
     const res = await GET(makeRequest(["c1"]));
     const body = await res.json();
@@ -150,18 +143,16 @@ describe("GET /api/dashboard/freshness", () => {
     const { prisma } = await import("@/lib/prisma");
     vi.mocked(getUserFromRequest).mockResolvedValue({ sub: "u1" } as never);
     vi.mocked(prisma.user.findFirst).mockResolvedValue({ id: "u1", role: "ADMIN" } as never);
-    vi.mocked(prisma.company.findMany)
-      .mockResolvedValueOnce([{ id: "c1" }] as never)
-      .mockResolvedValueOnce([
-        {
-          id: "c1",
-          updatedAt: EARLIER,
-          dashboardMonthlySummaries: [],
-          importBatches: [
-            { referenceMonth: "2026-03", createdAt: NOW },
-          ],
-        },
-      ] as never);
+    vi.mocked(prisma.company.findMany).mockResolvedValueOnce([
+      {
+        id: "c1",
+        updatedAt: EARLIER,
+        dashboardMonthlySummaries: [],
+        importBatches: [
+          { referenceMonth: "2026-03", createdAt: NOW },
+        ],
+      },
+    ] as never);
 
     const res = await GET(makeRequest(["c1"]));
     const body = await res.json();
@@ -177,11 +168,9 @@ describe("GET /api/dashboard/freshness", () => {
     const { prisma } = await import("@/lib/prisma");
     vi.mocked(getUserFromRequest).mockResolvedValue({ sub: "u1" } as never);
     vi.mocked(prisma.user.findFirst).mockResolvedValue({ id: "u1", role: "ADMIN" } as never);
-    vi.mocked(prisma.company.findMany)
-      .mockResolvedValueOnce([{ id: "c1" }] as never)
-      .mockResolvedValueOnce([
-        { id: "c1", updatedAt: NOW, dashboardMonthlySummaries: [], importBatches: [] },
-      ] as never);
+    vi.mocked(prisma.company.findMany).mockResolvedValueOnce([
+      { id: "c1", updatedAt: NOW, dashboardMonthlySummaries: [], importBatches: [] },
+    ] as never);
 
     const res = await GET(makeRequest(["c1"]));
     expect(res.headers.get("Cache-Control")).toBe("private, max-age=20, stale-while-revalidate=10");
@@ -192,17 +181,34 @@ describe("GET /api/dashboard/freshness", () => {
     const { prisma } = await import("@/lib/prisma");
     vi.mocked(getUserFromRequest).mockResolvedValue({ sub: "u1" } as never);
     vi.mocked(prisma.user.findFirst).mockResolvedValue({ id: "u1", role: "ADMIN" } as never);
-    vi.mocked(prisma.company.findMany)
-      .mockResolvedValueOnce([{ id: "c1" }, { id: "c2" }] as never)
-      .mockResolvedValueOnce([
-        { id: "c1", updatedAt: EARLIER, dashboardMonthlySummaries: [], importBatches: [] },
-        { id: "c2", updatedAt: NOW, dashboardMonthlySummaries: [], importBatches: [] },
-      ] as never);
+    vi.mocked(prisma.company.findMany).mockResolvedValueOnce([
+      { id: "c1", updatedAt: EARLIER, dashboardMonthlySummaries: [], importBatches: [] },
+      { id: "c2", updatedAt: NOW, dashboardMonthlySummaries: [], importBatches: [] },
+    ] as never);
 
     const res = await GET(makeRequest(["c1", "c2"]));
     const body = await res.json();
 
     expect(res.status).toBe(200);
     expect(body.companies).toHaveLength(2);
+  });
+
+  it("deduplicates repeated company IDs before querying", async () => {
+    const { getUserFromRequest } = await import("@/lib/auth");
+    const { prisma } = await import("@/lib/prisma");
+    vi.mocked(getUserFromRequest).mockResolvedValue({ sub: "u1" } as never);
+    vi.mocked(prisma.user.findFirst).mockResolvedValue({ id: "u1", role: "ADMIN" } as never);
+    vi.mocked(prisma.company.findMany).mockResolvedValueOnce([
+      { id: "c1", updatedAt: NOW, dashboardMonthlySummaries: [], importBatches: [] },
+    ] as never);
+
+    const res = await GET(makeRequest(["c1", "c1"]));
+
+    expect(res.status).toBe(200);
+    expect(prisma.company.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ id: { in: ["c1"] } }),
+      }),
+    );
   });
 });

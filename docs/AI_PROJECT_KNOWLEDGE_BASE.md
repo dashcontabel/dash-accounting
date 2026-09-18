@@ -159,27 +159,32 @@ Onde aparece:
 - `lib/xlsx/formula.ts`
 - `app/api/admin/mappings/*`
 - `app/api/admin/mappings/seed/route.ts`
+- `app/api/dashboard/transactions/route.ts`
 
 Impacto no codigo:
-Mudancas em dashboard fields ou formulas afetam resumos, indices e visualizacoes.
+Mudancas em dashboard fields ou formulas afetam resumos, indices e visualizacoes. O campo `PRO_LABORES` e estatico, usa debito com `ABS_SUM` e nasce sem codigos padrao porque a conta varia entre planos contabeis; o administrador deve configurar seus codigos. `DESPESAS_TOTAL` inclui esse campo. `DEMAIS_DESPESAS` funciona como agrupador residual: de suas contas correspondentes, o motor e o detalhamento de lancamentos excluem as que tambem correspondem a `IMPOSTOS`, `PRO_LABORES`, `IOF_IRRF`, `LRA2_DESP`, `LRA3_DESP`, `B_VISTA_DESP`, `TRAPICHE_DESP` ou `CONDOMINIO`.
 
 Pontos de atencao:
 - Testar mapeamentos estaticos e calculados.
 - Atualizar seeds e documentacao quando novo campo gerencial for criado.
+- Um prefixo amplo como `3` em `DEMAIS_DESPESAS` nao pode duplicar categorias especificas posteriormente somadas por `DESPESAS_TOTAL`.
+- O modal de `DEMAIS_DESPESAS` deve aplicar as mesmas exclusoes do total do card; `/api/dashboard/transactions` resolve os codigos diretamente dos mapeamentos ativos.
 
 ### Regra: Demonstrativo de rentabilidade
 
 Descricao:
-A rota `/app/rentabilidade` apresenta uma visao em formato de demonstrativo por empresa, usando os resumos mensais ja calculados. A tabela mostra empresas nas linhas, saldo bancario em 31/12 do ano anterior, rentabilidade liquida mes a mes, total por trimestre dentro do intervalo selecionado e saldo bancario final do periodo.
+A rota `/app/rentabilidade` apresenta uma visao em formato de demonstrativo por empresa e conta contabil. Cada empresa forma um grupo com linhas para as contas mapeadas em `RENDIMENTO_BRUTO` e `IOF_IRRF`; cada linha mostra a contribuicao liquida mensal e trimestral da conta. O grupo termina com `Total da empresa`, que preserva saldo bancario em 31/12 do ano anterior, rentabilidade liquida mes a mes, total por trimestre e saldo bancario final do periodo. Quando mais de uma empresa esta selecionada, a tabela termina com `Total consolidado`.
 
 Onde aparece:
 - `app/app/rentabilidade/page.tsx`
 - `lib/dashboard/rentabilidade.ts`
+- `lib/dashboard/rentabilidade-accounts.ts`
 - `app/components/app-shell.tsx`
 - `app/api/dashboard/summary/route.ts`
+- `app/api/dashboard/rentabilidade-accounts/route.ts`
 
 Impacto no codigo:
-A tela nao cria nova API nem nova tabela. Ela reutiliza `/api/auth/me` para descobrir empresas permitidas e `/api/dashboard/summary` para buscar os dados, preservando a validacao backend de usuario ativo, empresa ativa, grupo ativo e vinculo `UserCompany` para clientes.
+A tela reutiliza `/api/auth/me` e `/api/dashboard/summary` para empresas, saldos e totais oficiais. O endpoint protegido `/api/dashboard/rentabilidade-accounts` consulta `LedgerEntry` e os mapeamentos ativos para compor as linhas por conta, validando usuario ativo, empresa ativa, grupo ativo e vinculo `UserCompany` para clientes.
 
 Campos usados:
 - `SD_BANCARIO`
@@ -190,8 +195,59 @@ Campos usados:
 Pontos de atencao:
 - O saldo inicial depende do resumo de dezembro do ano anterior (`YYYY-12`).
 - A rentabilidade liquida usa `RENTABILIDADE` quando existe; se faltar, e derivada de `RENDIMENTO_BRUTO - IOF_IRRF`.
-- Detalhe por conta bancaria nao esta disponivel no resumo mensal; se for exigido, criar endpoint protegido usando `LedgerEntry`/`RazaoEntry` e validar acesso por empresa no backend.
+- Nas linhas de conta, rendimento entra positivo e IOF/IRRF entra como retencao negativa; a soma forma a composicao da rentabilidade liquida.
+- Quando existem varios lotes importados para a mesma empresa e competencia, o lote mais recente e a composicao autoritativa das contas de fluxo, evitando duplicidade entre Balancete e Razao.
+- Saldos inicial e final continuam no total da empresa, pois as contas que compoem rentabilidade sao contas de resultado e nao equivalem necessariamente as contas bancarias de `SD_BANCARIO`.
 - Nao duplicar regras de permissao no frontend; qualquer dado novo deve continuar vindo de endpoint autorizado.
+
+### Regra: Saldo bancario em filtros por periodo
+
+Descricao:
+No dashboard principal, filtros nao mensais devem exibir em `Saldos Bancarios por Conta` a ultima posicao disponivel ate o fim selecionado. Exemplo: para o intervalo de janeiro a julho, a divisao usa `SD_BANCARIO` de julho. Se o fim selecionado ainda nao foi contabilizado, usa-se o saldo do mes contabilizado mais recente; janeiro a agosto sem dados de agosto continua exibindo julho. Se a composicao por conta nao estiver disponivel, permanece um card de fallback com o total agregado.
+
+Onde aparece:
+- `lib/dashboard/periods.ts`
+- `lib/dashboard/bank-balances.ts`
+- `app/page.tsx`
+- `app/api/dashboard/bank-balances/route.ts`
+
+Pontos de atencao:
+- A regra vale para filtros trimestrais, semestrais, anuais e intervalos personalizados.
+- A visualizacao mensal continua usando o `SD_BANCARIO` do resumo mensal selecionado.
+- Nao somar nem calcular media de saldos de meses diferentes para obter a posicao final do periodo.
+- O endpoint protegido valida todas as empresas solicitadas. Para cada empresa, escolhe o ultimo resumo mensal ate o fim do filtro e seleciona a composicao importada cuja soma das contas mapeadas em `SD_BANCARIO` melhor reconcilia com o total oficial.
+- Em consolidacoes, as contas permanecem identificadas por empresa; contas de empresas diferentes nao sao fundidas somente por terem o mesmo codigo.
+- O cabecalho da divisao exibe o total consolidado a direita, conectado ao titulo pela linha azul; o valor soma os totais oficiais das empresas retornadas pela API e usa `SD_BANCARIO` como fallback quando a composicao nao esta disponivel.
+
+### Regra: Liquidez Seca exige estoque valido
+
+Descricao:
+A Liquidez Seca usa `(ATIVO_CIRCULANTE - ESTOQUES) / PASSIVO_CIRCULANTE`, mas somente e aplicavel quando `ESTOQUES` possui valor numerico, finito e maior que zero. Estoque ausente, nulo, zero ou negativo retorna indice sem valor. O card deve permanecer cinza/neutro e o historico nao deve tracar um ponto para a competencia.
+
+Onde aparece:
+- `lib/dashboard/liquidity-indices.ts`
+- `app/app/indices/page.tsx`
+
+Pontos de atencao:
+- Nao converter estoque ausente ou invalido para zero; isso faria a Liquidez Seca repetir a Liquidez Corrente.
+- Passivo Circulante igual a zero tambem torna o indice nao aplicavel.
+- A mensagem do card deve distinguir estoque invalido de denominador zero.
+
+### Regra: Polling de freshness proporcional a selecao
+
+Descricao:
+O dashboard consulta `/api/dashboard/freshness` a cada 30 segundos apenas para as empresas atualmente selecionadas. O agendamento usa timeout serializado, nao inicia uma nova consulta enquanto a anterior estiver em andamento e fica suspenso quando a aba do navegador esta oculta. Ao voltar para a aba, uma verificacao e feita imediatamente.
+
+Onde aparece:
+- `lib/dashboard/freshness.ts`
+- `app/page.tsx`
+- `app/api/dashboard/freshness/route.ts`
+
+Pontos de atencao:
+- A chave normalizada dos IDs estabiliza o ciclo mesmo quando o React recebe uma nova instancia de array com a mesma selecao.
+- O frontend deve permitir o cache privado curto definido pela API; nao usar `cache: no-store` nessa consulta.
+- A API combina validacao de acesso e leitura dos metadados de freshness em uma unica operacao Prisma de empresas, totalizando duas operacoes Prisma no nivel da rota incluindo a validacao do usuario.
+- Logs detalhados do proxy ficam restritos ao desenvolvimento para evitar ruido e custo de observabilidade em producao.
 
 ### Regra: Merge entre balancete e razao
 
@@ -518,6 +574,8 @@ Toda nova feature backend deve:
 - Navegacao e layout principal ficam em `AppShell`.
 - Menu exibe itens conforme `role`, `email` owner e flags como `adminOnly`/`clientHidden`.
 - Dashboard principal em `app/page.tsx` usa hooks React, cache local de dashboard, filtros de periodo e Recharts.
+- O resumo financeiro do dashboard principal concentra os indicadores no topo em quatro divisoes cromaticas, nesta ordem: `Receitas`, `Saldos Bancarios por Conta`, `Despesas` e `Investimentos e Resultado`. Cada divisao ocupa uma linha inteira e os cards quebram de linha dentro dela conforme a largura disponivel. Os cabecalhos exibem os indicadores oficiais `RECEITAS_TOTAL`, saldo bancario consolidado, `DESPESAS_TOTAL` e `RESULTADO`, conectados ao titulo por uma linha cromatica reforcada. Nao se somam cards derivados ou sobrepostos para formar esses totais. Todos os valores dos cards usam a mesma escala tipografica. Os cards seguem uma linguagem visual inspirada em observabilidade, com superficie neutra, faixa cromatica de status, numeros tabulares, metadados separados e estados de foco/hover. Cards com detalhamento disponivel, inclusive os de Centro de Custo, usam um indicador neutro com pulsacao suave e movimento no hover, respeitando `prefers-reduced-motion`. O comparativo redundante `Diferenca entre NFs` nao e exibido. A referencia ativa e o estado de consolidacao aparecem em uma faixa de contexto com maior hierarquia visual. Quando ha varias empresas selecionadas, cada uma e identificada por uma tag removivel; a remocao nunca deixa a selecao vazia e, ao restar uma empresa, ela passa a ser a empresa padrao.
+- A tabela de `/app/rentabilidade` usa grupos de empresa, linhas de contas contabeis com codigo, descricao e classificacao visual (`Rendimento` ou `Retencao`), subtotal por empresa e total consolidado quando aplicavel.
 - Componentes reutilizaveis ficam em `app/components`.
 - Chamadas a API usam `fetch` no client, com estados locais de loading, mensagem e erro.
 - Graficos pesados sao carregados com `next/dynamic` e `ssr: false` quando necessario.
@@ -576,7 +634,7 @@ Estrutura de endpoints observada:
 
 - `/api/auth/login`, `/api/auth/logout`, `/api/auth/me`
 - `/api/context/active-company`
-- `/api/dashboard/summary`, `/api/dashboard/freshness`, `/api/dashboard/cost-centers`, `/api/dashboard/field-codes`, `/api/dashboard/recalculate`, `/api/dashboard/transactions`, `/api/dashboard/tenants`
+- `/api/dashboard/summary`, `/api/dashboard/freshness`, `/api/dashboard/cost-centers`, `/api/dashboard/field-codes`, `/api/dashboard/recalculate`, `/api/dashboard/rentabilidade-accounts`, `/api/dashboard/transactions`, `/api/dashboard/tenants`
 - `/api/imports`, `/api/imports/xlsx`, `/api/imports/[id]`, `/api/imports/bulk-delete`
 - `/api/admin/users`, `/api/admin/users/[id]`
 - `/api/admin/companies`, `/api/admin/companies/[id]`

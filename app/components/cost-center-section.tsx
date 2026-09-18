@@ -32,6 +32,12 @@ type CostCenterSummaryResponse = {
   items: CostCenterSummaryItem[];
 };
 
+type CostCenterLoadState = {
+  requestKey: string;
+  data: CostCenterSummaryResponse | null;
+  error: string | null;
+};
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 function formatCurrencyShort(value: number) {
@@ -206,12 +212,16 @@ function CostCenterCard({
           <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24" aria-hidden="true">
             <path strokeLinecap="round" strokeLinejoin="round" d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" />
           </svg>
-          {/* always-visible drill-down indicator */}
-          <span className="absolute -right-1 -top-1 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-blue-500 ring-2 ring-white dark:ring-zinc-900">
-            <svg className="h-2 w-2 text-white" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24" aria-hidden="true">
+          <span
+            aria-hidden="true"
+            data-detail-indicator="true"
+            className="absolute -right-1.5 -top-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-zinc-600 text-white shadow-sm ring-2 ring-white motion-safe:animate-pulse dark:bg-zinc-300 dark:text-zinc-900 dark:ring-zinc-900"
+          >
+            <svg className="h-2 w-2 transition-transform duration-300 motion-safe:group-hover:-rotate-12 motion-safe:group-hover:scale-125 motion-reduce:transition-none" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-4.35-4.35M17 11A6 6 0 1 1 5 11a6 6 0 0 1 12 0z" />
             </svg>
           </span>
+          <span className="sr-only">Detalhamento disponível</span>
         </span>
       </div>
 
@@ -276,43 +286,53 @@ export default function CostCenterSection({
   companyId: string;
   referenceMonth: string;
 }) {
-  const [data, setData] = useState<CostCenterSummaryResponse | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const requestKey = companyId && referenceMonth ? `${companyId}:${referenceMonth}` : "";
+  const [loadState, setLoadState] = useState<CostCenterLoadState>({
+    requestKey: "",
+    data: null,
+    error: null,
+  });
   // "__null__" sentinel = entries with no cost center; null = modal closed
   const [drillDown, setDrillDown] = useState<{ costCenter: string; label: string } | null>(null);
 
   useEffect(() => {
     if (!companyId || !referenceMonth) {
-      setData(null);
       return;
     }
 
     let cancelled = false;
-    setLoading(true);
-    setError(null);
 
     fetch(
       `/api/dashboard/cost-centers?companyId=${encodeURIComponent(companyId)}&referenceMonth=${encodeURIComponent(referenceMonth)}`,
     )
       .then((r) => r.json())
       .then((json: CostCenterSummaryResponse) => {
-        if (!cancelled) setData(json);
+        if (!cancelled) {
+          setLoadState({ requestKey, data: json, error: null });
+        }
       })
       .catch(() => {
-        if (!cancelled) setError("Erro ao carregar centros de custo.");
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
+        if (!cancelled) {
+          setLoadState({
+            requestKey,
+            data: null,
+            error: "Erro ao carregar centros de custo.",
+          });
+        }
       });
 
     return () => {
       cancelled = true;
     };
-  }, [companyId, referenceMonth]);
+  }, [companyId, referenceMonth, requestKey]);
+
+  const isCurrentRequest = loadState.requestKey === requestKey;
+  const data = isCurrentRequest ? loadState.data : null;
+  const error = isCurrentRequest ? loadState.error : null;
+  const loading = Boolean(requestKey) && !isCurrentRequest;
 
   // Don't render anything if there are no cost centers
-  if (!loading && (!data || !data.hasCostCenters)) return null;
+  if (!requestKey || (!loading && !error && (!data || !data.hasCostCenters))) return null;
 
   return (
     <section className="mt-6">

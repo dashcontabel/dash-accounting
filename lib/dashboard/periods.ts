@@ -43,9 +43,9 @@ export type AggregatedPeriod = {
   dataJson: Record<string, number>;
 };
 
-// Fields that are averaged rather than summed when aggregating periods.
-// Balance sheet (patrimonial) values are point-in-time snapshots — average them
-// across months instead of summing, just like SD_BANCARIO.
+// Fields that are averaged rather than summed by the generic data combiner.
+// SD_BANCARIO is overridden below for period filters because the dashboard must
+// show the latest available position up to the selected period end.
 const AVERAGE_FIELDS = new Set([
   "SD_BANCARIO",
   "ATIVO_CIRCULANTE",
@@ -77,6 +77,28 @@ function sumData(summaries: MonthlySummary[]): Record<string, number> {
   result["RENTABILIDADE"] = (result["RENDIMENTO_BRUTO"] ?? 0) - (result["IOF_IRRF"] ?? 0);
   result["ALUGUEL_LIQUIDO"] = (result["ALUGUEL"] ?? 0) - (result["CONDOMINIO"] ?? 0);
   return result;
+}
+
+function findLatestBankBalance(
+  summaries: MonthlySummary[],
+  periodEnd: string,
+): number | undefined {
+  let latest: MonthlySummary | undefined;
+
+  for (const summary of summaries) {
+    if (
+      summary.referenceMonth > periodEnd
+      || summary.dataJson.SD_BANCARIO === undefined
+    ) {
+      continue;
+    }
+
+    if (!latest || summary.referenceMonth > latest.referenceMonth) {
+      latest = summary;
+    }
+  }
+
+  return latest?.dataJson.SD_BANCARIO;
 }
 
 const MONTH_LABELS: Record<string, string> = {
@@ -144,7 +166,14 @@ export function aggregateSummaries(
   if (rangeFiltered.length === 0) return [];
 
   const months = rangeFiltered.map((s) => s.referenceMonth);
-  return [{ label: groupLabel(months, granularity), months, dataJson: sumData(rangeFiltered) }];
+  const dataJson = sumData(rangeFiltered);
+  const latestBankBalance = findLatestBankBalance(summaries, toYM);
+
+  if (latestBankBalance !== undefined) {
+    dataJson.SD_BANCARIO = latestBankBalance;
+  }
+
+  return [{ label: groupLabel(months, granularity), months, dataJson }];
 }
 
 export function mergeCompanySummaries(

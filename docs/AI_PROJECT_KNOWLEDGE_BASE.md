@@ -149,6 +149,12 @@ Pontos de atencao:
 - Nao remover essa validacao em melhorias de parser.
 - Documentos devem ser comparados sem mascara.
 
+### Fluxo da tela de importacoes
+
+`/app/imports` separa envio de um arquivo e envio em lote (ate 24 arquivos), com selecao por clique ou arrastar, progresso por arquivo, filtros e historico compacto da empresa selecionada. A troca de empresa recarrega o historico e limpa arquivos preparados, erros e selecoes anteriores.
+
+No envio individual, a competencia e detectada do arquivo por padrao. O usuario pode informar `referenceMonth` manualmente quando o documento nao permite a deteccao. No lote, cada arquivo segue com deteccao automatica. A resposta do Razao pode conter varias competencias em `results`; a tela contabiliza somente os resultados nao idempotentes e usa o ultimo lote retornado para abrir os detalhes. Erros de validacao do envio individual aparecem junto ao formulario, preservando o arquivo para correcao.
+
 ### Regra: Recuperacao de abas em XLS legado
 
 Alguns exports BIFF8 (`.xls`) possuem o registro BOUNDSHEET apontando para uma posicao anterior ao inicio real da aba. Nesses casos, a biblioteca `xlsx` lista o nome da aba, mas nao carrega suas celulas; a deteccao do Razao falha e a importacao cai indevidamente no parser de Balancete.

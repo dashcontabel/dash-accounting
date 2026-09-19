@@ -66,6 +66,7 @@ Route handlers retornam JSON e usam Zod/helpers para validacao e autorizacao.
 - Toda consulta por empresa deve validar acesso por `UserCompany` ou regra equivalente.
 - Clientes nao podem acessar empresas/grupos fora do seu vinculo.
 - Importacao deve validar arquivo, tamanho, extensao, CNPJ/periodo quando disponivel, permissao e idempotencia por checksum.
+- A tela `/app/imports` detecta a competencia automaticamente no envio individual e em lote; no individual, permite informar o mes manualmente. A resposta do Razao pode incluir varias competencias e a troca de empresa recarrega o historico correspondente.
 - Exports XLS BIFF8 com indice de aba incorreto sao recuperados em memoria pelo leitor compartilhado de Balancete/Razao, preservando o arquivo original e seu checksum.
 - Nova importacao concluida do mesmo `sourceType`, empresa e mes deve evitar sobrescrita acidental.
 - Mapeamentos contabeis afetam dashboard e devem ter testes.

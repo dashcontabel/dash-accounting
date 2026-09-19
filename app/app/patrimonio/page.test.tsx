@@ -43,7 +43,7 @@ describe("PatrimonioPage", () => {
     expect(producedCard).toHaveAttribute("data-summary-tone", "emerald");
 
     expect(mobileAsset).not.toBeNull();
-    const values = mobileAsset!.querySelector("div.grid");
+    const values = mobileAsset!.querySelector<HTMLElement>("div.grid");
     expect(values).toHaveClass("grid-cols-2", "sm:grid-cols-3");
     expect(within(values!).getByText("Total").parentElement)
       .toHaveClass("col-span-2", "sm:col-span-1");

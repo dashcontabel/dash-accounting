@@ -122,7 +122,7 @@ function SummaryCard({
   return (
     <article
       data-summary-tone={resolvedTone}
-      className={`group relative flex min-h-[9.5rem] min-w-0 flex-col overflow-hidden rounded-xl border p-5 shadow-sm backdrop-blur-sm transition-all duration-200 xl:p-4 2xl:p-5 ${cardStyles.card}`}
+      className={`group relative flex min-h-[8.25rem] min-w-0 flex-col overflow-hidden rounded-xl border p-4 shadow-sm backdrop-blur-sm transition-all duration-200 sm:min-h-[9.5rem] sm:p-5 xl:p-4 2xl:p-5 ${cardStyles.card}`}
     >
       <span aria-hidden="true" className={`absolute inset-x-0 top-0 h-1 bg-gradient-to-r ${cardStyles.accent}`} />
       <span aria-hidden="true" className={`absolute -right-8 -top-8 h-24 w-24 rounded-full blur-2xl ${cardStyles.glow}`} />
@@ -139,14 +139,14 @@ function SummaryCard({
         </span>
       </div>
 
-      <div className="relative z-10 mt-auto pt-6">
+      <div className="relative z-10 mt-auto pt-3 sm:pt-6">
         <p
           title={formattedValue}
           className={`min-w-0 truncate text-2xl font-extrabold leading-none tracking-tight tabular-nums sm:text-3xl xl:text-xl 2xl:text-2xl ${cardStyles.value}`}
         >
           {formattedValue}
         </p>
-        <div className="mt-4 flex items-center gap-2 border-t border-zinc-200/80 pt-3 dark:border-zinc-800">
+        <div className="mt-2 flex items-center gap-2 border-t border-zinc-200/80 pt-2 dark:border-zinc-800 sm:mt-4 sm:pt-3">
           <span aria-hidden="true" className={`h-1.5 w-1.5 shrink-0 rounded-full ${cardStyles.dot}`} />
           <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400">{sub}</p>
         </div>
@@ -653,7 +653,7 @@ export default function RentabilidadePage() {
 
         {!isLoading && statement && statement.rows.length > 0 && !hasNoData && (
           <>
-            <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+            <div className="grid gap-3 sm:grid-cols-2 sm:gap-4 xl:grid-cols-4">
               <SummaryCard
                 label="Rentab. liquida"
                 value={totalRow?.accumulatedNetYield}
@@ -731,7 +731,7 @@ export default function RentabilidadePage() {
                   <table className="w-max min-w-full border-collapse text-sm">
                     <thead>
                       <tr className="border-b border-zinc-200 bg-white dark:border-zinc-700 dark:bg-zinc-900">
-                        <th className="sticky left-0 z-10 w-64 bg-white px-4 py-3 text-left text-[11px] font-extrabold uppercase text-zinc-500 shadow-[1px_0_0_rgba(212,212,216,0.75)] dark:bg-zinc-900 dark:text-zinc-400 dark:shadow-[1px_0_0_rgba(63,63,70,0.9)]">
+                        <th className="sticky left-0 z-10 w-36 min-w-36 max-w-36 bg-white px-2 py-3 text-left text-[10px] font-extrabold uppercase text-zinc-500 shadow-[1px_0_0_rgba(212,212,216,0.75)] sm:w-64 sm:min-w-64 sm:max-w-64 sm:px-4 sm:text-[11px] dark:bg-zinc-900 dark:text-zinc-400 dark:shadow-[1px_0_0_rgba(63,63,70,0.9)]">
                           Conta contabil
                         </th>
                         <th className="w-36 border-l border-zinc-100 px-3 py-3 text-right text-[11px] font-extrabold uppercase text-zinc-500 dark:border-zinc-800 dark:text-zinc-400">
@@ -821,7 +821,7 @@ function CompanyGroupRow({
 }) {
   return (
     <tr className="border-y border-zinc-200 bg-zinc-100/80 dark:border-zinc-700 dark:bg-zinc-800/70">
-      <th colSpan={columnCount} className="px-4 py-2.5 text-left">
+      <th colSpan={columnCount} className="px-2 py-2.5 text-left sm:px-4">
         <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
           <span className="text-sm font-extrabold text-zinc-800 dark:text-zinc-100">
             {companyName}
@@ -885,9 +885,9 @@ function RentabilidadeAccountTableRow({
 
   return (
     <tr className="border-b border-zinc-100 hover:bg-blue-50/40 dark:border-zinc-800 dark:hover:bg-blue-950/20">
-      <th className="sticky left-0 z-10 w-64 max-w-64 bg-white px-4 py-3 text-left shadow-[1px_0_0_rgba(212,212,216,0.75)] dark:bg-zinc-900 dark:shadow-[1px_0_0_rgba(63,63,70,0.9)]">
-        <span className="flex items-center gap-2">
-          <span className="truncate text-sm font-bold text-zinc-800 dark:text-zinc-100">
+      <th scope="row" className="sticky left-0 z-10 w-36 min-w-36 max-w-36 bg-white px-2 py-3 text-left shadow-[1px_0_0_rgba(212,212,216,0.75)] sm:w-64 sm:min-w-64 sm:max-w-64 sm:px-4 dark:bg-zinc-900 dark:shadow-[1px_0_0_rgba(63,63,70,0.9)]">
+        <span className="flex flex-col items-start gap-1 sm:flex-row sm:items-center sm:gap-2">
+          <span className="break-all text-xs font-bold text-zinc-800 sm:truncate sm:text-sm dark:text-zinc-100">
             {account.accountCode}
           </span>
           <span className={`shrink-0 rounded-full px-1.5 py-0.5 text-[11px] font-semibold ${
@@ -898,7 +898,7 @@ function RentabilidadeAccountTableRow({
             {category}
           </span>
         </span>
-        <span className="mt-0.5 block truncate text-xs font-medium text-zinc-500 dark:text-zinc-400" title={account.accountName}>
+        <span className="mt-0.5 block break-words text-[11px] font-medium text-zinc-500 sm:truncate sm:text-xs dark:text-zinc-400" title={account.accountName}>
           {account.accountName}
         </span>
       </th>
@@ -950,7 +950,7 @@ function RentabilidadeTableRow({
 
   return (
     <tr className={rowClass}>
-      <th className={`sticky left-0 z-10 w-64 max-w-64 px-4 py-3 text-left text-sm font-extrabold ${stickyClass}`}>
+      <th scope="row" className={`sticky left-0 z-10 w-36 min-w-36 max-w-36 px-2 py-3 text-left text-xs font-extrabold sm:w-64 sm:min-w-64 sm:max-w-64 sm:px-4 sm:text-sm ${stickyClass}`}>
         <span className="block truncate">{label ?? row.companyName}</span>
         {label && !total ? (
           <span className="mt-0.5 block truncate text-xs font-medium opacity-70">{row.companyName}</span>

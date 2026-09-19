@@ -1,6 +1,7 @@
-import { read, utils } from "xlsx";
+import { utils } from "xlsx";
 
 import type { NormalizedValueColumn, ParsedAccountRow } from "./parser";
+import { readAccountingWorkbook } from "./read-workbook";
 
 // ─── Fixed column indices (always the same regardless of format) ─────────────
 const COL_DATE = 0;               // Excel serial date
@@ -169,7 +170,7 @@ function monthFromDate(d: Date): string {
  */
 export function isRazaoFormat(buffer: Buffer): boolean {
   try {
-    const wb = read(buffer, { type: "buffer", cellDates: false, sheetRows: 300 });
+    const wb = readAccountingWorkbook(buffer, 300);
     const sheetName = wb.SheetNames[0];
     if (!sheetName) return false;
     const rows = utils.sheet_to_json<unknown[]>(wb.Sheets[sheetName]!, {
@@ -189,7 +190,7 @@ export function isRazaoFormat(buffer: Buffer): boolean {
  * transaction entries (for drill-down storage).
  */
 export function parseRazaoBuffer(buffer: Buffer): ParsedRazaoResult {
-  const wb = read(buffer, { type: "buffer", cellDates: false });
+  const wb = readAccountingWorkbook(buffer);
   const sheetName = wb.SheetNames[0];
   if (!sheetName) throw new Error("Arquivo Razão sem abas.");
 

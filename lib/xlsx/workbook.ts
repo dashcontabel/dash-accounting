@@ -1,6 +1,7 @@
 import { read, utils } from "xlsx";
 
 import { parseXlsxRows } from "./parser";
+import { readAccountingWorkbook } from "./read-workbook";
 
 type SupportedFormat = "xlsx" | "xls" | "csv";
 
@@ -48,7 +49,7 @@ export function parseXlsxBuffer(buffer: Buffer, fileName = "upload.xlsx", sheetN
     workbook = read(csvText, { type: "string", cellDates: false });
   } else {
     // Both .xlsx and .xls are handled by the binary buffer reader
-    workbook = read(buffer, { type: "buffer", cellDates: false });
+    workbook = readAccountingWorkbook(buffer);
   }
 
   const targetSheetName = resolveSheetName(workbook, sheetName);

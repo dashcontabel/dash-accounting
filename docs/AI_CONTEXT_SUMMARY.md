@@ -41,6 +41,7 @@ Conceitos criticos:
 - `DEMAIS_DESPESAS` e um agrupador residual: quando usa um prefixo amplo como `3`, o motor e o detalhamento excluem contas ja classificadas em categorias especificas de despesa, evitando dupla contagem em `DESPESAS_TOTAL` e exibicao indevida de impostos no modal.
 - Isolamento de dados por empresa/grupo.
 - Rentabilidade: `/app/rentabilidade` monta visao de demonstrativo com empresas nas linhas, saldo de 31/12 do ano anterior, rentabilidade liquida mes a mes, totais trimestrais e saldo final do periodo. A composicao por clique usa os campos `RENDIMENTO_BRUTO`, `IOF_IRRF`, `RENTABILIDADE` e `SD_BANCARIO` do `DashboardMonthlySummary`.
+- No celular, o demonstrativo de rentabilidade mantem a coluna de contas mais estreita para expor os valores durante o scroll; os cards de patrimonio usam o estilo de observabilidade e distribuem valores em duas colunas mais o total abaixo.
 - Rendimentos liquidos no dashboard principal: o card usa destaque teal e seta ascendente quando `RENTABILIDADE` e zero ou positiva; valores negativos usam destaque vermelho e seta descendente para nao sugerir tendencia positiva.
 - Saldo bancario no dashboard principal: em filtros nao mensais, a divisao por conta usa o ultimo `SD_BANCARIO` disponivel ate o fim selecionado; janeiro a julho exibe julho e, se agosto ainda nao foi contabilizado, janeiro a agosto continua exibindo julho. A visualizacao mensal permanece vinculada ao resumo do mes selecionado. A composicao vem de `/api/dashboard/bank-balances` e deve reconciliar com o total oficial do resumo mensal. O total consolidado aparece no fim do cabecalho da divisao, ligado ao titulo pela linha azul.
 - Liquidez Seca: `(ATIVO_CIRCULANTE - ESTOQUES) / PASSIVO_CIRCULANTE` so e calculada quando `ESTOQUES` e numerico, finito e maior que zero. Estoque ausente, nulo, zero ou negativo deixa o indice sem valor e o card em estado neutro; nunca deve ser substituido por zero, pois isso duplicaria a Liquidez Corrente.
@@ -65,6 +66,7 @@ Route handlers retornam JSON e usam Zod/helpers para validacao e autorizacao.
 - Toda consulta por empresa deve validar acesso por `UserCompany` ou regra equivalente.
 - Clientes nao podem acessar empresas/grupos fora do seu vinculo.
 - Importacao deve validar arquivo, tamanho, extensao, CNPJ/periodo quando disponivel, permissao e idempotencia por checksum.
+- Exports XLS BIFF8 com indice de aba incorreto sao recuperados em memoria pelo leitor compartilhado de Balancete/Razao, preservando o arquivo original e seu checksum.
 - Nova importacao concluida do mesmo `sourceType`, empresa e mes deve evitar sobrescrita acidental.
 - Mapeamentos contabeis afetam dashboard e devem ter testes.
 - Status mensal de pagamento de locatarios e calculado de `RazaoEntry` por pareamento de competencia/data/lote/valor/centro de custo: provisao e debito em contas a receber (`1.1.30.*` ou `1.1.20.100.*`) contra receita de aluguel/condominio/ADM; baixa e credito na propria conta a receber, com banco/caixa como confirmacao quando presente.

@@ -88,6 +88,30 @@ describe("POST /api/imports/xlsx", () => {
     expect(body.summary).toEqual({ SD_BANCARIO: 100 });
   });
 
+  it("returns a validation error when the spreadsheet cannot be parsed", async () => {
+    const { getUserFromRequest } = await import("@/lib/auth");
+    const { parseXlsxBuffer } = await import("@/lib/xlsx");
+    const { prisma } = await import("@/lib/prisma");
+
+    vi.mocked(getUserFromRequest).mockResolvedValue({ sub: "u1" } as never);
+    vi.mocked(prisma.user.findFirst).mockResolvedValue({ id: "u1", role: "ADMIN" } as never);
+    vi.mocked(parseXlsxBuffer).mockImplementation(() => {
+      throw new Error("Cabecalho nao encontrado.");
+    });
+
+    const formData = new FormData();
+    formData.append("companyId", "c1");
+    formData.append("referenceMonth", "2026-02");
+    formData.append("file", new File(["invalid"], "balancete.xlsx"));
+
+    const response = await POST(
+      new NextRequest("http://localhost/api/imports/xlsx", { method: "POST", body: formData }),
+    );
+
+    await expect(response.json()).resolves.toEqual({ error: "Cabecalho nao encontrado." });
+    expect(response.status).toBe(422);
+  });
+
   it("persists Razao detail entries used by tenant payment status", async () => {
     const { getUserFromRequest } = await import("@/lib/auth");
     const { isRazaoFormat, parseRazaoBuffer, applyAccountMappings } = await import("@/lib/xlsx");

@@ -116,7 +116,7 @@ describe("RentabilidadePage", () => {
 
     const netYieldCard = screen.getByText("Rentab. liquida").closest("article");
     expect(netYieldCard).toHaveAttribute("data-summary-tone", "red");
-    expect(netYieldCard).toHaveClass("relative", "min-h-[9.5rem]", "overflow-hidden", "shadow-sm");
+    expect(netYieldCard).toHaveClass("relative", "min-h-[8.25rem]", "sm:min-h-[9.5rem]", "overflow-hidden", "shadow-sm");
     expect(netYieldCard?.querySelector("p[title]")).toHaveTextContent(/-R\$\s*15,00/);
     expect(netYieldCard?.querySelector("p[title]")).toHaveClass("text-red-700", "tabular-nums");
     expect(netYieldCard?.querySelector('[data-summary-icon="true"]')).toHaveClass("text-red-600");
@@ -126,7 +126,12 @@ describe("RentabilidadePage", () => {
 
     for (const label of ["Rendimento bruto", "IOF / IRRF", "Saldo final"]) {
       expect(screen.getByText(label).closest("article"))
-        .toHaveClass("relative", "min-h-[9.5rem]", "overflow-hidden", "shadow-sm");
+        .toHaveClass("relative", "min-h-[8.25rem]", "sm:min-h-[9.5rem]", "overflow-hidden", "shadow-sm");
     }
+
+    expect(screen.getByRole("columnheader", { name: "Conta contabil" }))
+      .toHaveClass("w-36", "sm:w-64");
+    expect(within(incomeRow!).getByRole("rowheader"))
+      .toHaveClass("w-36", "sm:w-64");
   });
 });

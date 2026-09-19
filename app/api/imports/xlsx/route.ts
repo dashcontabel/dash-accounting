@@ -92,7 +92,20 @@ export async function POST(request: NextRequest) {
     }
 
     // Parse the file upfront to extract metadata (CNPJ, period) and validate the sheet
-    const parsedWorkbook = parseXlsxBuffer(fileBuffer, file.name);
+    let parsedWorkbook: ReturnType<typeof parseXlsxBuffer>;
+    try {
+      parsedWorkbook = parseXlsxBuffer(fileBuffer, file.name);
+    } catch (error) {
+      return NextResponse.json(
+        {
+          error:
+            error instanceof Error && error.message
+              ? error.message
+              : "Nao foi possivel ler o arquivo enviado.",
+        },
+        { status: 422 },
+      );
+    }
 
     // Detect consolidated balancete (covers multiple months — start → periodEndMonth)
     const isConsolidated = Boolean(parsedWorkbook.metadata?.periodEndMonth);

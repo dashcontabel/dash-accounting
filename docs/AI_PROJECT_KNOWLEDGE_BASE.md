@@ -149,6 +149,14 @@ Pontos de atencao:
 - Nao remover essa validacao em melhorias de parser.
 - Documentos devem ser comparados sem mascara.
 
+### Regra: Recuperacao de abas em XLS legado
+
+Alguns exports BIFF8 (`.xls`) possuem o registro BOUNDSHEET apontando para uma posicao anterior ao inicio real da aba. Nesses casos, a biblioteca `xlsx` lista o nome da aba, mas nao carrega suas celulas; a deteccao do Razao falha e a importacao cai indevidamente no parser de Balancete.
+
+`lib/xlsx/read-workbook.ts` corrige os offsets somente em memoria, somente quando nenhuma aba foi carregada e cada aba nomeada pode ser pareada com um registro BOF de planilha. O Balancete e o Razao usam o mesmo leitor. O arquivo enviado permanece inalterado para o checksum e a validacao normal de CNPJ/periodo continua aplicada. Arquivos sem estrutura recuperavel continuam gerando erro de leitura.
+
+Os arquivos Petra de janeiro a agosto de 2026 em `docs/arquivo` exercitam esse caso: o Balancete contem 18 contas analiticas e o Razao contem lancamentos de janeiro a agosto. Os testes de regressao geram um XLS com offset incorreto, sem depender desses arquivos locais.
+
 ### Regra: Motor de mapeamento contabil
 
 Descricao:
@@ -578,6 +586,8 @@ Toda nova feature backend deve:
 - O card `Rend. Liquidos` reflete o sinal de `RENTABILIDADE`: zero ou positivo usa teal com seta ascendente; negativo usa vermelho com seta descendente. Cor e icone nunca devem indicar alta quando o valor liquido for negativo.
 - A tabela de `/app/rentabilidade` usa grupos de empresa, linhas de contas contabeis com codigo, descricao e classificacao visual (`Rendimento` ou `Retencao`), subtotal por empresa e total consolidado quando aplicavel.
 - Os KPIs superiores de `/app/rentabilidade` seguem o mesmo padrao visual de observabilidade da dashboard, com faixa cromatica, superficie neutra, brilho sutil, icone destacado, valor tabular e metadado separado. Valores negativos sempre usam o estado vermelho; a rentabilidade liquida negativa usa seta descendente, enquanto zero ou positivo usa teal com seta ascendente.
+- Em telas estreitas, a primeira coluna fixa do demonstrativo de rentabilidade ocupa 9rem (16rem a partir de `sm`), deixando visivel uma coluna numerica enquanto a tabela rola horizontalmente. Os KPIs reduzem altura e espacamentos no celular. Os cabecalhos das linhas de conta e total usam `scope="row"`.
+- Os KPIs de patrimonio seguem o mesmo padrao visual de observabilidade, inclusive estado vermelho para valor negativo. Ate `xl`, os ativos usam cards; em celulares, os valores Economico e Financeiro ficam lado a lado e o Total ocupa uma linha inteira para evitar sobreposicao. O conteudo do `AppShell` usa menos padding em telas estreitas.
 - Componentes reutilizaveis ficam em `app/components`.
 - Chamadas a API usam `fetch` no client, com estados locais de loading, mensagem e erro.
 - Graficos pesados sao carregados com `next/dynamic` e `ssr: false` quando necessario.

@@ -135,26 +135,59 @@ function KpiCard({ label, value, sub, color, icon }: {
   color: "blue" | "emerald" | "amber"; icon: React.ReactNode;
 }) {
   const colors = {
-    blue: "bg-blue-50 border-blue-200 text-blue-700 dark:bg-blue-950/40 dark:border-blue-800/50 dark:text-blue-300",
-    emerald: "bg-emerald-50 border-emerald-200 text-emerald-700 dark:bg-emerald-950/40 dark:border-emerald-800/50 dark:text-emerald-300",
-    amber: "bg-amber-50 border-amber-200 text-amber-700 dark:bg-amber-950/40 dark:border-amber-800/50 dark:text-amber-300",
-  };
-  const iconBg = {
-    blue: "bg-blue-100 text-blue-600 dark:bg-blue-900/50 dark:text-blue-400",
-    emerald: "bg-emerald-100 text-emerald-600 dark:bg-emerald-900/50 dark:text-emerald-400",
-    amber: "bg-amber-100 text-amber-600 dark:bg-amber-900/50 dark:text-amber-400",
-  };
+    blue: {
+      card: "border-blue-200/80 bg-white/95 dark:border-blue-900/60 dark:bg-zinc-900/90",
+      value: "text-blue-700 dark:text-blue-300",
+      icon: "bg-blue-50 text-blue-600 dark:bg-blue-950/70 dark:text-blue-400",
+      accent: "from-blue-600 via-blue-500 to-cyan-400",
+      glow: "bg-blue-400/15 dark:bg-blue-500/10",
+      dot: "bg-blue-500",
+    },
+    emerald: {
+      card: "border-emerald-200/80 bg-white/95 dark:border-emerald-900/60 dark:bg-zinc-900/90",
+      value: "text-emerald-700 dark:text-emerald-300",
+      icon: "bg-emerald-50 text-emerald-600 dark:bg-emerald-950/70 dark:text-emerald-400",
+      accent: "from-emerald-600 via-emerald-500 to-lime-400",
+      glow: "bg-emerald-400/15 dark:bg-emerald-500/10",
+      dot: "bg-emerald-500",
+    },
+    amber: {
+      card: "border-amber-200/80 bg-white/95 dark:border-amber-900/60 dark:bg-zinc-900/90",
+      value: "text-amber-700 dark:text-amber-300",
+      icon: "bg-amber-50 text-amber-600 dark:bg-amber-950/70 dark:text-amber-400",
+      accent: "from-amber-600 via-amber-500 to-yellow-400",
+      glow: "bg-amber-400/15 dark:bg-amber-500/10",
+      dot: "bg-amber-500",
+    },
+    red: {
+      card: "border-red-200/80 bg-white/95 dark:border-red-900/60 dark:bg-zinc-900/90",
+      value: "text-red-700 dark:text-red-300",
+      icon: "bg-red-50 text-red-600 dark:bg-red-950/70 dark:text-red-400",
+      accent: "from-red-600 via-red-500 to-orange-400",
+      glow: "bg-red-400/15 dark:bg-red-500/10",
+      dot: "bg-red-500",
+    },
+  } as const;
+  const tone = value !== null && value < 0 ? "red" : color;
+  const style = colors[tone];
   return (
-    <div className={`flex flex-col rounded-2xl border-2 p-5 ${colors[color]}`}>
-      <div className="mb-3 flex items-center justify-between">
-        <p className="text-[11px] font-bold uppercase tracking-widest text-zinc-500 dark:text-zinc-400">{label}</p>
-        <span className={`flex h-8 w-8 items-center justify-center rounded-xl ${iconBg[color]}`}>{icon}</span>
+    <article data-summary-tone={tone} className={`group relative flex min-h-[8.25rem] min-w-0 flex-col overflow-hidden rounded-xl border p-4 shadow-sm backdrop-blur-sm transition-all duration-200 sm:min-h-[9.5rem] xl:p-5 ${style.card}`}>
+      <span aria-hidden="true" className={`absolute inset-x-0 top-0 h-1 bg-gradient-to-r ${style.accent}`} />
+      <span aria-hidden="true" className={`absolute -right-8 -top-8 h-24 w-24 rounded-full blur-2xl ${style.glow}`} />
+      <div className="relative z-10 flex items-start justify-between gap-3">
+        <p className="min-w-0 text-xs font-semibold uppercase leading-snug tracking-[0.08em] text-zinc-600 dark:text-zinc-300">{label}</p>
+        <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ring-1 ring-inset ring-black/5 dark:ring-white/10 ${style.icon}`}>{icon}</span>
       </div>
-      <p className={`text-2xl font-extrabold tabular-nums sm:text-3xl ${colors[color]}`}>
-        {value !== null ? fmtShort(value) : <span className="text-zinc-400 text-lg">—</span>}
-      </p>
-      <p className="mt-1 text-[11px] text-zinc-400 dark:text-zinc-500">{sub}</p>
-    </div>
+      <div className="relative z-10 mt-auto pt-3 sm:pt-6">
+        <p title={fmt(value)} className={`min-w-0 truncate text-2xl font-extrabold leading-none tracking-tight tabular-nums sm:text-xl 2xl:text-2xl ${style.value}`}>
+          {value !== null ? fmtShort(value) : "—"}
+        </p>
+        <div className="mt-2 flex items-center gap-2 border-t border-zinc-200/80 pt-2 dark:border-zinc-800 sm:mt-4 sm:pt-3">
+          <span aria-hidden="true" className={`h-1.5 w-1.5 shrink-0 rounded-full ${style.dot}`} />
+          <p className="min-w-0 truncate text-xs font-medium text-zinc-500 dark:text-zinc-400" title={sub}>{sub}</p>
+        </div>
+      </div>
+    </article>
   );
 }
 
@@ -580,7 +613,7 @@ export default function PatrimonioPage() {
       </div>
 
       {/* KPI Cards */}
-      <div className="mb-6 grid gap-4 sm:grid-cols-3">
+      <div className="mb-5 grid gap-3 sm:grid-cols-3 sm:gap-4">
         <KpiCard label="Total do Patrimônio" value={grandTotal} sub="Econômico + Financeiro" color="blue"
           icon={<svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M3 10h18M3 6h18M3 14h10m-7 4h4" /></svg>} />
         <KpiCard label="Patrimônio Produzido" value={producedValue} sub={producedSection?.label ?? "Cotas, A Receber, Móveis"} color="emerald"
@@ -615,50 +648,50 @@ export default function PatrimonioPage() {
       {!isLoading && assets.length > 0 && (
         <>
           {/* ── MOBILE ─────────────────────────────────────────────────────── */}
-          <div className="flex flex-col gap-3 sm:hidden">
+          <div className="flex flex-col gap-3 xl:hidden">
             {assets.map((asset) => {
               const total = totalRow(asset);
               const hasVal = hasAnyValue(asset);
               if (asset.rowType === "SECTION") {
                 return (
-                  <div key={asset.id} className="mt-1 flex items-center justify-between px-1">
-                    <p className="text-[10px] font-bold uppercase tracking-widest text-zinc-400">{asset.label}</p>
+                  <div key={asset.id} className="mt-1 flex items-center justify-between gap-2 px-1">
+                    <p className="min-w-0 break-words text-[10px] font-bold uppercase tracking-widest text-zinc-400">{asset.label}</p>
                     {isAdmin && !asset.id.startsWith("__") && <div className="flex gap-1"><EditBtn onClick={() => openEdit(asset)} /><DeleteBtn onClick={() => handleDelete(asset.id)} /></div>}
                   </div>
                 );
               }
               if (asset.rowType === "TOTAL" || asset.rowType === "SUBTOTAL") {
                 return (
-                  <div key={asset.id} className="flex items-center justify-between rounded-2xl bg-blue-600 px-4 py-4 shadow-sm dark:bg-blue-700">
-                    <p className="text-sm font-extrabold uppercase tracking-wide text-white">{asset.label}</p>
-                    <div className="flex items-center gap-2">
-                      <p className="text-base font-extrabold tabular-nums text-white">{hasVal ? fmt(total) : "—"}</p>
+                  <div key={asset.id} className="flex flex-col items-start gap-1 rounded-2xl bg-blue-600 px-3 py-3 shadow-sm dark:bg-blue-700 sm:flex-row sm:items-center sm:justify-between sm:px-4">
+                    <p className="min-w-0 text-sm font-extrabold uppercase tracking-wide text-white">{asset.label}</p>
+                    <div className="flex w-full min-w-0 items-center justify-between gap-2 sm:w-auto">
+                      <p className="min-w-0 text-sm font-extrabold tabular-nums text-white sm:text-base">{hasVal ? fmt(total) : "—"}</p>
                       {isAdmin && asset.rowType !== "TOTAL" && <div className="flex gap-1"><EditBtn onClick={() => openEdit(asset)} light /><DeleteBtn onClick={() => handleDelete(asset.id)} light /></div>}
                     </div>
                   </div>
                 );
               }
               return (
-                <div key={asset.id} className="rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm dark:border-zinc-700/50 dark:bg-zinc-900/50">
-                  <div className="mb-3 flex items-start justify-between">
-                    <p className="text-sm font-semibold text-zinc-800 dark:text-zinc-100">
+                <div key={asset.id} className="min-w-0 rounded-2xl border border-zinc-200 bg-white p-3 shadow-sm dark:border-zinc-700/50 dark:bg-zinc-900/50 sm:p-4">
+                  <div className="mb-3 flex items-start justify-between gap-2">
+                    <p className="min-w-0 break-words text-sm font-semibold text-zinc-800 dark:text-zinc-100">
                       {asset.label}
                       {asset.sublabel && <span className="ml-1.5 text-[10px] font-normal text-zinc-400">— {asset.sublabel}</span>}
                     </p>
-                    {isAdmin && <div className="flex gap-1"><EditBtn onClick={() => openEdit(asset)} /><DeleteBtn onClick={() => handleDelete(asset.id)} /></div>}
+                    {isAdmin && <div className="flex shrink-0 gap-1"><EditBtn onClick={() => openEdit(asset)} /><DeleteBtn onClick={() => handleDelete(asset.id)} /></div>}
                   </div>
-                  <div className="grid grid-cols-3 gap-2">
-                    <div className="flex flex-col rounded-xl bg-zinc-50 px-3 py-2.5 dark:bg-zinc-800">
+                  <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3 sm:gap-2">
+                    <div className="flex min-w-0 flex-col rounded-xl bg-zinc-50 px-2 py-2 dark:bg-zinc-800 sm:px-3 sm:py-2.5">
                       <span className="mb-1 text-[9px] font-bold uppercase tracking-widest text-zinc-400">Econômico</span>
-                      <span className="text-xs font-semibold tabular-nums text-zinc-700 dark:text-zinc-200">{fmt(asset.economico)}</span>
+                      <span className="text-[11px] font-semibold tabular-nums text-zinc-700 dark:text-zinc-200 sm:text-xs">{fmt(asset.economico)}</span>
                     </div>
-                    <div className="flex flex-col rounded-xl bg-amber-50 px-3 py-2.5 dark:bg-amber-900/20">
+                    <div className="flex min-w-0 flex-col rounded-xl bg-amber-50 px-2 py-2 dark:bg-amber-900/20 sm:px-3 sm:py-2.5">
                       <span className="mb-1 text-[9px] font-bold uppercase tracking-widest text-amber-500">Financeiro</span>
-                      <span className="text-xs font-semibold tabular-nums text-zinc-700 dark:text-zinc-200">{fmt(asset.financeiro)}</span>
+                      <span className="text-[11px] font-semibold tabular-nums text-zinc-700 dark:text-zinc-200 sm:text-xs">{fmt(asset.financeiro)}</span>
                     </div>
-                    <div className="flex flex-col rounded-xl bg-blue-50 px-3 py-2.5 dark:bg-blue-900/20">
+                    <div className="col-span-2 flex min-w-0 flex-col rounded-xl bg-blue-50 px-2 py-2 dark:bg-blue-900/20 sm:col-span-1 sm:px-3 sm:py-2.5">
                       <span className="mb-1 text-[9px] font-bold uppercase tracking-widest text-blue-500">Total</span>
-                      <span className="text-xs font-bold tabular-nums text-zinc-800 dark:text-zinc-100">{hasVal ? fmt(total) : "—"}</span>
+                      <span className="text-[11px] font-bold tabular-nums text-zinc-800 dark:text-zinc-100 sm:text-xs">{hasVal ? fmt(total) : "—"}</span>
                     </div>
                   </div>
                 </div>
@@ -668,7 +701,7 @@ export default function PatrimonioPage() {
           </div>
 
           {/* ── DESKTOP ─────────────────────────────────────────────────────── */}
-          <div className="hidden sm:block overflow-hidden rounded-2xl shadow-lg border border-[#0c3460]/20 dark:border-[#0f4c81]/20">
+          <div className="hidden overflow-hidden rounded-2xl border border-[#0c3460]/20 shadow-lg dark:border-[#0f4c81]/20 xl:block">
             <div className="flex items-center justify-between bg-linear-to-r from-[#0c3460] to-[#0f4c81] px-6 py-4 dark:from-[#090f1a] dark:to-[#0d1f38]">
               <div>
                 <p className="text-[10px] font-bold uppercase tracking-widest text-blue-300/70">Demonstrativo Patrimonial</p>

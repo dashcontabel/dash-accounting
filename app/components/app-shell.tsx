@@ -319,7 +319,7 @@ export default function AppShell({ role, email, children, onLogout, headerRight 
       </aside>
 
       {/* Main content */}
-      <main className="min-h-screen w-full px-3 py-4 sm:px-5 sm:py-5 lg:pl-[18rem] lg:pr-6 lg:py-6">
+      <main className="min-h-screen w-full px-2 py-3 sm:px-5 sm:py-5 lg:pl-[18rem] lg:pr-6 lg:py-6">
         {/* Top header bar */}
         <header className="mb-5 flex items-center justify-between rounded-2xl border border-[--border] bg-[--surface] px-4 py-3.5 shadow-sm sm:px-5">
           {/* Left: push right past hamburger on mobile */}
@@ -372,7 +372,7 @@ export default function AppShell({ role, email, children, onLogout, headerRight 
         </header>
 
         {/* Page content */}
-        <div className="rounded-2xl border border-[--border] bg-[--surface] p-4 shadow-sm sm:p-5 lg:p-7">
+        <div className="min-w-0 rounded-2xl border border-[--border] bg-[--surface] p-3 shadow-sm sm:p-5 lg:p-7">
           {children}
         </div>
       </main>

@@ -104,7 +104,7 @@ const defaultMappings = [
   {
     dashboardField: "IOF_IRRF",
     matchType: "LIST",
-    codes: [],
+    codes: ["3.2.2.05.001", "3.2.2.05.004", "3.2.2.05.006"],
     valueColumn: "debito",
     aggregation: "ABS_SUM",
     isCalculated: false,

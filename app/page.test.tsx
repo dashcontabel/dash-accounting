@@ -100,18 +100,18 @@ describe("Home dashboard", () => {
       ALUGUEL: 0,
       LRA2_INVEST: 0, LRA3_INVEST: 0, B_VISTA_INVEST: 0, TRAPICHE_INVEST: 0,
       IMPOSTOS: 10946.16,
-      IOF_IRRF: 0,
+      IOF_IRRF: 116.76,
       LRA2_DESP: 0, LRA3_DESP: 0, B_VISTA_DESP: 0, TRAPICHE_DESP: 0,
       CONDOMINIO: 0,
       DISTRIB_LUCROS: 55000,
       DEMAIS_DESPESAS: 11675,
       PRO_LABORES: 7500,
       SD_BANCARIO: 2136604.36,
-      RENTABILIDADE: 16022.72,
+      RENTABILIDADE: 15905.96,
       ALUGUEL_LIQUIDO: 0,
       RECEITAS_TOTAL: 130010.64,
-      DESPESAS_TOTAL: 22621.16,
-      RESULTADO: 107389.48,
+      DESPESAS_TOTAL: 22737.92,
+      RESULTADO: 107272.72,
     };
 
     const fetchMock = vi.fn().mockImplementation((url: string) => {
@@ -140,6 +140,7 @@ describe("Home dashboard", () => {
               fieldCodes: {
                 FATURAMENTO: ["4.1.1"],
                 IMPOSTOS: ["3.2.2.03"],
+                IOF_IRRF: ["3.2.2.05.001", "3.2.2.05.004", "3.2.2.05.006"],
                 DEMAIS_DESPESAS: ["3"],
               },
             }),
@@ -219,9 +220,17 @@ describe("Home dashboard", () => {
     expect(within(financialSummary).getByLabelText("Receitas: total"))
       .toHaveTextContent("R$ 130.010,64");
     expect(within(financialSummary).getByLabelText("Despesas: total"))
-      .toHaveTextContent("R$ 22.621,16");
+      .toHaveTextContent("R$ 22.737,92");
     expect(within(financialSummary).getByLabelText("Investimentos e Resultado: total"))
-      .toHaveTextContent("R$ 107.389,48");
+      .toHaveTextContent("R$ 107.272,72");
+    const profitMarginCard = within(financialSummary).getByLabelText("Margem de Lucro: 81,9%");
+    expect(profitMarginCard).toHaveTextContent("Resultado ÷ receitas");
+    expect(profitMarginCard.querySelector('[data-margin-ring="true"]')).toHaveClass("h-20", "w-20");
+    expect(profitMarginCard.querySelector('p[title="81,9%"]')).toHaveClass("text-base", "whitespace-nowrap", "tabular-nums");
+    const profitMarginSignal = profitMarginCard.querySelector('[data-margin-signal="true"]') as SVGCircleElement;
+    expect(Number.parseFloat(profitMarginSignal.style.strokeDashoffset)).toBeCloseTo(18.1, 1);
+    const iofIrrfCard = within(financialSummary).getByText("IOF / IRRF").closest("article");
+    expect(iofIrrfCard).toHaveTextContent("R$ 116,76");
     expect(within(financialSummary).getByText("Pró-labores")).toBeInTheDocument();
     expect(within(financialSummary).getByText("Distribuição de Lucros")).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Faturamento × Despesas × Resultado" })).toBeInTheDocument();
@@ -236,6 +245,18 @@ describe("Home dashboard", () => {
     expect(detailIndicator).toHaveClass("bg-zinc-600", "motion-safe:animate-pulse");
     expect(interactiveCard).toHaveTextContent("Detalhamento disponível");
 
+    fireEvent.click(iofIrrfCard!);
+    await waitFor(() => {
+      const detailUrl = fetchMock.mock.calls
+        .map(([url]) => String(url))
+        .find((url) => url.startsWith("/api/dashboard/transactions?") && url.includes("3.2.2.05.004"));
+
+      expect(detailUrl).toContain("accountCode=3.2.2.05.001");
+      expect(detailUrl).toContain("accountCode=3.2.2.05.004");
+      expect(detailUrl).toContain("accountCode=3.2.2.05.006");
+    });
+    fireEvent.click(await screen.findByRole("button", { name: "Fechar" }));
+
     for (const label of ["Faturamento", "Rend. Líquidos", "Demais Despesas", "Banco do Brasil"]) {
       const card = within(financialSummary).getByText(label).closest("article");
       const value = card?.querySelectorAll("p")[1];
@@ -249,7 +270,7 @@ describe("Home dashboard", () => {
     await waitFor(() => {
       const detailUrl = fetchMock.mock.calls
         .map(([url]) => String(url))
-        .find((url) => url.startsWith("/api/dashboard/transactions?"));
+        .find((url) => url.startsWith("/api/dashboard/transactions?") && url.includes("excludeDashboardField=IMPOSTOS"));
 
       expect(detailUrl).toContain("accountCode=3");
       expect(detailUrl).toContain("excludeDashboardField=IMPOSTOS");
@@ -257,7 +278,7 @@ describe("Home dashboard", () => {
     });
   });
 
-  it("highlights the consolidation context and lets the user remove a company by its tag", async () => {
+  it("switches PLACA labels back to the defaults during consolidation", async () => {
     const mockSummary = {
       FATURAMENTO: 100,
       NFS_RECEBIDAS: 90,
@@ -280,7 +301,7 @@ describe("Home dashboard", () => {
     };
 
     const companies = [
-      { id: "tag-c1", name: "Empresa Alfa", groupId: "g1" },
+      { id: "tag-c1", name: "PLACA", groupId: "g1" },
       { id: "tag-c2", name: "Empresa Beta", groupId: "g1" },
     ];
 
@@ -349,11 +370,20 @@ describe("Home dashboard", () => {
     vi.stubGlobal("fetch", fetchMock);
     render(<Home />);
 
-    fireEvent.click(await screen.findByRole("button", { name: "Empresa Alfa" }));
+    const financialSummary = await screen.findByRole("region", { name: "Resumo financeiro" });
+    expect(await within(financialSummary).findByText("Previsão")).toBeInTheDocument();
+    expect(within(financialSummary).getByText("Recebido")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "PLACA" }));
     fireEvent.click(screen.getByRole("checkbox", { name: "Empresa Beta" }));
     fireEvent.click(screen.getByRole("button", { name: "Confirmar" }));
 
     expect(await screen.findByText("2 empresas")).toBeInTheDocument();
+    await waitFor(() => {
+      const consolidatedSummary = screen.getByRole("region", { name: "Resumo financeiro" });
+      expect(within(consolidatedSummary).getByText("Faturamento")).toBeInTheDocument();
+      expect(within(consolidatedSummary).getByText("NFs Recebidas")).toBeInTheDocument();
+    });
     expect(within(screen.getByLabelText("Contexto da visualização")).getByText("Consolidado")).toBeInTheDocument();
     expect(await screen.findByLabelText("Saldos Bancários por Conta: total"))
       .toHaveTextContent("R$ 2.000,00");
@@ -367,9 +397,9 @@ describe("Home dashboard", () => {
     expect(negativeNetYieldCard?.querySelector('[data-kpi-icon="true"] path'))
       .toHaveAttribute("d", "M13 17h8m0 0V9m0 8-8-8-4 4-6-6");
 
-    const alphaTag = screen.getByRole("button", { name: "Remover Empresa Alfa da consolidação" });
+    const placaTag = screen.getByRole("button", { name: "Remover PLACA da consolidação" });
     const betaTag = screen.getByRole("button", { name: "Remover Empresa Beta da consolidação" });
-    expect(alphaTag).toBeInTheDocument();
+    expect(placaTag).toBeInTheDocument();
     expect(betaTag).toBeInTheDocument();
 
     fireEvent.click(betaTag);
@@ -377,6 +407,9 @@ describe("Home dashboard", () => {
     await waitFor(() => {
       expect(screen.queryByRole("button", { name: "Remover Empresa Beta da consolidação" })).not.toBeInTheDocument();
       expect(screen.getByText("Referência")).toBeInTheDocument();
+      const placaSummary = screen.getByRole("region", { name: "Resumo financeiro" });
+      expect(within(placaSummary).getByText("Previsão")).toBeInTheDocument();
+      expect(within(placaSummary).getByText("Recebido")).toBeInTheDocument();
     });
     expect(fetchMock).toHaveBeenCalledWith("/api/context/active-company", {
       method: "POST",

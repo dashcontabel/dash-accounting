@@ -42,6 +42,8 @@ import {
 import { companyDataCache, consumeStaleCompanyIds, markCompanyStale } from "@/lib/dashboard/cache";
 import { DETAILED_EXPENSE_FIELDS } from "@/lib/dashboard/expense-fields";
 import { useDashboardFreshness } from "@/lib/dashboard/freshness";
+import { calculateProfitMargin } from "@/lib/dashboard/profit-margin";
+import { getRevenueCardLabels } from "@/lib/dashboard/revenue-card-labels";
 import type { CompanyData } from "@/lib/dashboard/types";
 
 type MeResponse = {
@@ -86,6 +88,15 @@ function formatCurrencyShort(value: number) {
   if (Math.abs(value) >= 1_000_000) return `R$ ${(value / 1_000_000).toFixed(1)}M`;
   if (Math.abs(value) >= 1_000) return `R$ ${(value / 1_000).toFixed(0)}k`;
   return formatCurrency(value);
+}
+
+function formatPercentage(value: number | null) {
+  if (value === null || !Number.isFinite(value)) return "—";
+  return value.toLocaleString("pt-BR", {
+    style: "percent",
+    minimumFractionDigits: 1,
+    maximumFractionDigits: 1,
+  });
 }
 
 function get(data: DashboardData, field: string): number {
@@ -297,6 +308,91 @@ function KpiCard({
   );
 }
 
+function MarginKpiCard({ value }: { value: number | null }) {
+  const color: KpiColor = value === null ? "purple" : value < 0 ? "red" : "green";
+  const c = COLOR_MAP[color];
+  const formattedValue = formatPercentage(value);
+  const signalProgress = value === null ? 0 : Math.min(Math.abs(value) * 100, 100);
+  const ringGradient = value === null
+    ? { start: "#7c3aed", end: "#d946ef" }
+    : value < 0
+      ? { start: "#dc2626", end: "#fb923c" }
+      : { start: "#059669", end: "#a3e635" };
+
+  return (
+    <article
+      aria-label={`Margem de Lucro: ${formattedValue}`}
+      className={`relative flex min-h-[9.5rem] min-w-0 flex-col overflow-hidden rounded-xl border p-5 shadow-sm backdrop-blur-sm xl:p-4 2xl:p-5 ${c.card}`}
+    >
+      <span aria-hidden="true" className={`absolute inset-x-0 top-0 h-1 bg-gradient-to-r ${c.accent}`} />
+      <span aria-hidden="true" className={`absolute -right-8 -top-8 h-24 w-24 rounded-full blur-2xl ${c.glow}`} />
+
+      <div className="relative z-10 flex items-start justify-between gap-3">
+        <p className="min-w-0 text-sm font-semibold uppercase leading-snug tracking-[0.08em] text-zinc-600 dark:text-zinc-300">
+          Margem de Lucro
+        </p>
+        <span
+          data-kpi-icon="true"
+          className={`relative flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ring-1 ring-inset ring-black/5 dark:ring-white/10 ${c.icon}`}
+        >
+          {Icons.percentage}
+        </span>
+      </div>
+
+      <div className="relative z-10 mt-auto pt-2">
+        <div className="flex justify-center">
+          <div data-margin-ring="true" className="relative h-20 w-20">
+            <svg aria-hidden="true" viewBox="0 0 100 100" className="h-full w-full overflow-visible drop-shadow-sm">
+              <defs>
+                <linearGradient id="profit-margin-ring-gradient" x1="15" y1="85" x2="85" y2="15" gradientUnits="userSpaceOnUse">
+                  <stop offset="0%" stopColor={ringGradient.start} />
+                  <stop offset="100%" stopColor={ringGradient.end} />
+                </linearGradient>
+              </defs>
+              <circle
+                cx="50"
+                cy="50"
+                r="41"
+                fill="none"
+                strokeWidth="9"
+                className="stroke-zinc-200 dark:stroke-zinc-800"
+              />
+              <circle
+                data-margin-signal="true"
+                cx="50"
+                cy="50"
+                r="41"
+                pathLength="100"
+                fill="none"
+                stroke="url(#profit-margin-ring-gradient)"
+                strokeWidth="9"
+                strokeLinecap="round"
+                strokeDasharray="100"
+                className="transition-[stroke-dashoffset] duration-700 ease-out motion-reduce:transition-none"
+                style={{ strokeDashoffset: 100 - signalProgress }}
+                transform="rotate(-90 50 50)"
+              />
+            </svg>
+            <p
+              title={formattedValue}
+              className={`absolute inset-0 flex min-w-0 items-center justify-center whitespace-nowrap text-base font-extrabold leading-none tracking-tight tabular-nums ${c.value}`}
+            >
+              {formattedValue}
+            </p>
+          </div>
+        </div>
+        <div className="mt-1 border-t border-zinc-200/80 pt-2 dark:border-zinc-800">
+          <div className="flex items-center justify-center gap-1.5 text-center text-[10px] font-medium leading-none text-zinc-500 dark:text-zinc-400">
+            <span aria-hidden="true" className={`h-1.5 w-1.5 shrink-0 rounded-full ${c.dot}`} />
+            <span>{value === null ? "Receitas zeradas" : "Resultado ÷ receitas"}</span>
+            <span className="font-mono uppercase tracking-wide">%</span>
+          </div>
+        </div>
+      </div>
+    </article>
+  );
+}
+
 // ── Recharts tooltip formatter ──────────────────────────────────────────────
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -352,6 +448,13 @@ const Icons = {
     <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
       <path strokeLinecap="round" strokeLinejoin="round" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1" />
       <path strokeLinecap="round" strokeLinejoin="round" d="M17 3l-5 5-5-5" />
+    </svg>
+  ),
+  percentage: (
+    <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" d="M19 5L5 19" />
+      <circle cx="7" cy="7" r="2" />
+      <circle cx="17" cy="17" r="2" />
     </svg>
   ),
 };
@@ -571,6 +674,7 @@ export default function Home() {
   }, [mergedSummaries, granularity, selectedYear, selectedMonth, activePeriod]);
 
   const d = activeSummary?.dataJson ?? {};
+  const profitMargin = calculateProfitMargin(d);
 
   const bankBalanceEndMonth = useMemo(() => {
     if (!selectedYear) return "";
@@ -684,6 +788,7 @@ export default function Home() {
     }),
     [allowedCompanies, selectedCompanyIds],
   );
+  const revenueCardLabels = getRevenueCardLabels(selectedCompanies);
   // Drill-down available only for single-company monthly view (single referenceMonth is unambiguous)
   const canDrillDown = !isMultiCompany && granularity === "monthly" && !!selectedYear && !!selectedMonth;
   const COMPANY_COLORS = ["#10b981", "#0f4c81", "#f59e0b", "#ef4444", "#a855f7", "#0ea5e9"];
@@ -1321,12 +1426,12 @@ export default function Home() {
               total={get(d, "RECEITAS_TOTAL")}
             >
               <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
-                <KpiCard label="Faturamento" value={get(d, "FATURAMENTO")} color="green"
+                <KpiCard label={revenueCardLabels.billing} value={get(d, "FATURAMENTO")} color="green"
                   sub="NFs emitidas" icon={Icons.invoice}
-                  onDrillDown={canDrillDown && mappingCodes["FATURAMENTO"]?.[0] ? () => setDrillDown({ accountCode: mappingCodes["FATURAMENTO"][0]!, label: "Faturamento" }) : undefined} />
-                <KpiCard label="NFs Recebidas" value={get(d, "NFS_RECEBIDAS")} color="green"
+                  onDrillDown={canDrillDown && mappingCodes["FATURAMENTO"]?.[0] ? () => setDrillDown({ accountCode: mappingCodes["FATURAMENTO"][0]!, label: revenueCardLabels.billing }) : undefined} />
+                <KpiCard label={revenueCardLabels.receivedInvoices} value={get(d, "NFS_RECEBIDAS")} color="green"
                   sub="Pagamentos recebidos" icon={Icons.invoice}
-                  onDrillDown={canDrillDown && mappingCodes["NFS_RECEBIDAS"]?.[0] ? () => setDrillDown({ accountCode: mappingCodes["NFS_RECEBIDAS"][0]!, label: "NFs Recebidas" }) : undefined} />
+                  onDrillDown={canDrillDown && mappingCodes["NFS_RECEBIDAS"]?.[0] ? () => setDrillDown({ accountCode: mappingCodes["NFS_RECEBIDAS"][0]!, label: revenueCardLabels.receivedInvoices }) : undefined} />
                 <KpiCard label="Aluguel" value={get(d, "ALUGUEL")} color="green" icon={Icons.building} />
                 <KpiCard label="Rec. Passivas" value={get(d, "RENDIMENTO_BRUTO")} color="teal"
                   sub="Rendimentos de aplicações" icon={Icons.chart}
@@ -1389,9 +1494,11 @@ export default function Home() {
               icon={Icons.tax}
               total={get(d, "DESPESAS_TOTAL")}
             >
-              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
                 <KpiCard label="Impostos" value={get(d, "IMPOSTOS")} color="red" icon={Icons.tax}
                   onDrillDown={canDrillDown && mappingCodes["IMPOSTOS"]?.[0] ? () => setDrillDown({ accountCode: mappingCodes["IMPOSTOS"][0]!, label: "Impostos" }) : undefined} />
+                <KpiCard label="IOF / IRRF" value={get(d, "IOF_IRRF")} color="red" icon={Icons.tax}
+                  onDrillDown={canDrillDown && mappingCodes["IOF_IRRF"]?.length ? () => setDrillDown({ accountCode: null, accountCodes: mappingCodes["IOF_IRRF"], label: "IOF / IRRF" }) : undefined} />
                 <KpiCard label="Pró-labores" value={get(d, "PRO_LABORES")} color="red" icon={Icons.dollar}
                   onDrillDown={canDrillDown && mappingCodes["PRO_LABORES"]?.[0] ? () => setDrillDown({ accountCode: mappingCodes["PRO_LABORES"][0]!, label: "Pró-labores" }) : undefined} />
                 <KpiCard label="Demais Despesas" value={get(d, "DEMAIS_DESPESAS")} color="red" icon={Icons.chart}
@@ -1410,13 +1517,14 @@ export default function Home() {
               icon={Icons.profit}
               total={get(d, "RESULTADO")}
             >
-              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
                 <KpiCard label="Investimentos" value={investmentsTotal} color="teal" icon={Icons.trending}
                   onDrillDown={canDrillDown && investmentAccountCodes.length > 0 ? () => setDrillDown({ accountCode: null, accountCodes: investmentAccountCodes, label: "Investimentos" }) : undefined} />
                 <KpiCard label="Distribuição de Lucros" value={get(d, "DISTRIB_LUCROS")} color="purple" icon={Icons.profit}
                   onDrillDown={canDrillDown && mappingCodes["DISTRIB_LUCROS"]?.length ? () => setDrillDown({ accountCode: null, accountCodes: mappingCodes["DISTRIB_LUCROS"], label: "Distribuição de Lucros" }) : undefined} />
                 <KpiCard label="Resultado" value={get(d, "RESULTADO")} color={get(d, "RESULTADO") >= 0 ? "green" : "red"}
                   sub={get(d, "RESULTADO") >= 0 ? "▲ Superávit" : "▼ Déficit"} icon={Icons.profit} />
+                <MarginKpiCard value={profitMargin} />
               </div>
             </DashboardDivision>
           </section>
